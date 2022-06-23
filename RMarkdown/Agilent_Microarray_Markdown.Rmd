@@ -1,0 +1,92 @@
+---
+title: "Agilent Microarray Processing Pipeline RMarkdown"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r}
+print("Hello")
+```
+
+## Installing necessary packages
+
+For processing Agilent microarray data, we will need to install a few packages that will used for the importing and analyzing the data. These will include Bioconductor as well as Linear Models for Microarray (Limma). These are popular packages for processing microarray data.
+
+```{r}
+## For installing Bioconductor on R
+# if (!require("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install(version = "3.14")
+
+## For installing limma on R
+# if (!require("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install("limma")
+
+```
+
+## Importing the Raw Data
+
+Now that we have our tools to look at the data, we can start by importing the raw data from the ".txt" files into R.
+```{r}
+GLDS_41_rs <- read.csv("Runsheet(GLDS-41).csv", check.names = FALSE, fileEncoding = 'UTF-8-BOM') ## Outputs a dataframe
+Factor_Value <- x[,"Factor Value[gravity]"]
+```
+```{r Raw_Data_Input} 
+datadir = "C:/Users/tangk/Desktop/Agilent_Microarray/input_data"
+files = dir(path = file.path(datadir, "GLDS-41/GLDS-41_Raw_Data"), pattern="*\\.txt$")
+# Raw data = txt files, Output: EListRaw
+raw_data <- limma::read.maimages(files, source="agilent", path = file.path(datadir, "GLDS-41/GLDS-41_Raw_Data"), sep="\t", green.only = TRUE)
+y <- limma::backgroundCorrect(raw_data, method = "normexp")    
+```
+
+-   datadir = A variable that stores the path to the directory that holds the three datasets that I have chosen.
+-   files = A variable that will detect all of the text files within the GLDS-41_Raw_Data directory. This is where all of the raw Agilent microarray data is stored for the GLDS-41 dataset.
+-   source = "agilent" because the data that I want to import will be agilent microarray data. There are other options for this flag for other types of microarrays
+-   path = The path to the directory that holds the dataset's raw data.
+-   sep = How the data is separated in those raw data files (in our case it's tab separated).
+-   green.only = TRUE, This command is for telling the function that it should only read the green (Cys3) channel rather than red and green since we're only looking at single channel microarrays.
+
+## QC of the Raw Data
+
+In this step, we should be looking at the raw data to make sure that it is in the correct format so that it can be processed correctly down the pipeline.
+
+```{r}
+class(raw_data)
+```
+
+```{r}
+dim(raw_data)
+```
+
+```{r}
+summary(raw_data)
+```
+
+```{r}
+str(raw_data)
+```
+
+## Normalization of the Data
+
+```{r}
+
+```
+
+## QC of the Normalized Data
+
+```{r}
+
+```
+
+## Differential Gene Analysis
+
+```{r}
+
+```
+
+## Adding Gene Annotations
+
+```{r}
+
+```
