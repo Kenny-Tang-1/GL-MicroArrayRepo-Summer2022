@@ -1,5 +1,5 @@
 ---
-title: "Agilent Single-Channel Microarray Processing Pipeline RMarkdown (GLDS-41)"
+title: "Agilent Single-Channel Microarray Processing Pipeline RMarkdown (GLDS-156)"
 output: html_document
 date: "`r Sys.Date()`"
 ---
@@ -30,14 +30,14 @@ library(limma)
 
 Now that we have loaded in the library, we can look at the data. We can start by importing the raw data from the ".txt" files into R.
 ```{r}
-GLDS_41_rs <- read.csv("Runsheet(GLDS-41).csv", check.names = FALSE, fileEncoding = 'UTF-8-BOM') ## Outputs a dataframe
-Factor_Value <- GLDS_41_rs[,"Factor Value[gravity]"]
+GLDS_156_rs <- read.csv("Runsheet(GLDS-156).csv", check.names = FALSE, fileEncoding = 'UTF-8-BOM') ## Outputs a dataframe
+Factor_Value <- GLDS_156_rs[,c("Factor Value[Dose]", "Factor Value[ionizing radiation]")]
 ```
 ```{r Raw_Data_Input} 
 datadir = "C:/Users/tangk/Desktop/Agilent_Microarray/input_data"
-files = dir(path = file.path(datadir, "GLDS-41/GLDS-41_Raw_Data"), pattern="*\\.txt$")
+files = dir(path = file.path(datadir, "GLDS-156/GLDS-156_Raw_Data"), pattern="*\\.txt$")
 ## Input: ".txt" files, Output: EListRaw (Raw expression levels)
-raw_data <- limma::read.maimages(files, source="agilent", path = file.path(datadir, "GLDS-41/GLDS-41_Raw_Data"), sep="\t", green.only = TRUE)
+raw_data <- limma::read.maimages(files, source="agilent", path = file.path(datadir, "GLDS-156/GLDS-156_Raw_Data"), sep="\t", green.only = TRUE)
   
 ```
 -   datadir = A variable that stores the path to the directory that holds the three datasets that I have chosen.
