@@ -6,8 +6,8 @@ date: "`r Sys.Date()`"
 
 ## Installing necessary packages
 
-For processing Agilent microarray data, we will need to install a few packages that will used for the importing and analyzing the data. 
-These will include Bioconductor as well as Linear Models for Microarray (Limma). These are popular packages for processing microarray data.
+For processing Agilent microarray data, I needed to install a few packages that were used for the importing and analyzing the data. 
+This included Bioconductor as well as Linear Models for Microarray (Limma). These are popular packages for processing microarray data.
 
 ```{r}
 ## For installing Bioconductor on R
@@ -22,20 +22,23 @@ These will include Bioconductor as well as Linear Models for Microarray (Limma).
 
 ```
 ## Load the packages
-Now that we have installed the packages, we need to load in the packages so that we can use their functions.
+After installing the packages above, I had to load them in using the library function so that I could access their functions.
 ```{r}
 library(limma)
 ```
 ## Importing the Raw Data
-
-Now that we have loaded in the library, we can look at the data. We can start by importing the raw data from the ".txt" files into R.
-```{r}
-GLDS_41_rs <- read.csv("Runsheet(GLDS-41).csv", check.names = FALSE, fileEncoding = 'UTF-8-BOM') ## Outputs a dataframe
+Now that the library was loaded, I was able to import the raw data. I started by importing the runsheet into R.
+This contained the necessary data for processing later in the pipeline.
+```{r Importing_runsheets}
+dir = "C:/Users/tangk/Desktop/Agilent_Microarray"
+GLDS_41_rs <- read.csv(file.path(dir, "Runsheet(GLDS-41).csv"), check.names = FALSE, fileEncoding = 'UTF-8-BOM') ## Outputs a dataframe
 Factor_Value <- GLDS_41_rs[,"Factor Value[gravity]"]
 ```
+Here, I imported the raw data from the text files into R using the readmaimages() function from the Limma package.
 ```{r Raw_Data_Input} 
 datadir = "C:/Users/tangk/Desktop/Agilent_Microarray/input_data"
 files = dir(path = file.path(datadir, "GLDS-41/GLDS-41_Raw_Data"), pattern="*\\.txt$")
+
 ## Input: ".txt" files, Output: EListRaw (Raw expression levels)
 raw_data <- limma::read.maimages(files, source="agilent", path = file.path(datadir, "GLDS-41/GLDS-41_Raw_Data"), sep="\t", green.only = TRUE)
   
@@ -49,7 +52,7 @@ raw_data <- limma::read.maimages(files, source="agilent", path = file.path(datad
 
 ## QC of the Raw Data
 
-In this step, we should be looking at the raw data to make sure that it is in the correct format so that it can be processed correctly down the pipeline.
+In this step, I looked at the raw data to make sure that it is in the correct format so that it could be processed correctly down the pipeline.
 
 ```{r}
 class(raw_data)
@@ -68,9 +71,11 @@ str(raw_data)
 ```
 
 ## Normalization of the Data
-Now that we know that the raw data looks fine and is formatted correctly,
-we can move on to removing a lot of the variation in the gene expression data
-that comes from external sources (i.e. Sample preparation, labeling, hybridization). 
+After making sure that the raw data was formatted properly,
+I moved on to removing a lot of the variation in the gene expression data
+that comes from external sources (i.e. Sample preparation, labeling, hybridization)
+by performing normalization on the raw data. For this step, I was able to use another
+function from Limma called backgroundCorrect() which took in the raw data and normalized it. 
 
 ```{r}
 norm_data <- limma::backgroundCorrect(raw_data, method = "normexp")   
