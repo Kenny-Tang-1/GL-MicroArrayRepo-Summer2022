@@ -34,6 +34,10 @@ dir = "C:/Users/tangk/Desktop/Agilent_Microarray"
 GLDS_174_rs <- read.csv(file.path(dir, "Runsheet(GLDS-174).csv"), check.names = FALSE, fileEncoding = 'UTF-8-BOM') ## Outputs a dataframe
 Factor_Value <- GLDS_174_rs[,c("Factor Value[sex]", "Factor Value[exposure duration]")]
 ```
+- dir = A variable that stores the location of where I kept the runsheets.
+- GLDS_174_rs = A varaible that holds the contents of those runsheets.
+- Factor_Value = A variable that holds specifically the factor values column from the runsheet.
+
 Here, I imported the raw data from the text files into R using the readmaimages() function from the Limma package.
 ```{r Raw_Data_Input} 
 datadir = "C:/Users/tangk/Desktop/Agilent_Microarray/input_data"
@@ -44,7 +48,7 @@ raw_data <- limma::read.maimages(files, source="agilent", path = file.path(datad
   
 ```
 -   datadir = A variable that stores the path to the directory that holds the three datasets that I have chosen.
--   files = A variable that will detect all of the text files within the GLDS-41_Raw_Data directory. This is where all of the raw Agilent microarray data is stored for the GLDS-41 dataset.
+-   files = A variable that will detect all of the text files within the GLDS-174_Raw_Data_Combined directory. This is where all of the raw Agilent microarray data is stored for the GLDS-174 dataset.
 -   source = "agilent" because the data that I want to import will be agilent microarray data. There are other options for this flag for other types of microarrays
 -   path = The path to the directory that holds the dataset's raw data.
 -   sep = How the data is separated in those raw data files (in our case it's tab separated).

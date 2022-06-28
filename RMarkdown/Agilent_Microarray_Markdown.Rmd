@@ -34,6 +34,10 @@ dir = "C:/Users/tangk/Desktop/Agilent_Microarray"
 GLDS_41_rs <- read.csv(file.path(dir, "Runsheet(GLDS-41).csv"), check.names = FALSE, fileEncoding = 'UTF-8-BOM') ## Outputs a dataframe
 Factor_Value <- GLDS_41_rs[,"Factor Value[gravity]"]
 ```
+- dir = A variable that stores the location of where I kept the runsheets.
+- GLDS_41_rs = A varaible that holds the contents of those runsheets.
+- Factor_Value = A variable that holds specifically the factor values column from the runsheet.
+
 Here, I imported the raw data from the text files into R using the readmaimages() function from the Limma package.
 ```{r Raw_Data_Input} 
 datadir = "C:/Users/tangk/Desktop/Agilent_Microarray/input_data"
