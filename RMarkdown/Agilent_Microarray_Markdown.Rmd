@@ -20,11 +20,13 @@ This included Bioconductor as well as Linear Models for Microarray (Limma). Thes
 #     install.packages("BiocManager")
 # BiocManager::install("limma")
 
+
 ```
 ## Load the packages
 After installing the packages above, I had to load them in using the library function so that I could access their functions.
 ```{r}
 library(limma)
+
 ```
 ## Importing the Raw Data
 Now that the library was loaded, I was able to import the raw data. I started by importing the runsheet into R.
@@ -58,20 +60,29 @@ raw_data <- limma::read.maimages(files, source="agilent", path = file.path(datad
 
 In this step, I looked at the raw data to make sure that it is in the correct format so that it could be processed correctly down the pipeline.
 
-```{r}
-class(raw_data)
+```{r EListRaw_Density_plot, fig.height = 8, fig.width = 8, fig.align = "center"}
+plotDensities(raw_data, log = TRUE, legend = "topright" , main = "EListRaw Densities")
+# Add in (potentially)
+# Color the lines based on the experimental groups they are in
 ```
 
 ```{r}
-dim(raw_data)
+for (sample_name in colnames(raw_data$E)) {
+    print(sample_name)
+	imageplot(raw_data$E[,sample_name], layout=raw_data$printer, legend = TRUE)
+} # Prints out a pseudo image of each sample for visualizing spatial artifacts (manually look for errors in intensities of raw data)
+```
+
+```{r fig.height = 5, fig.width = 5, fig.align = "center"}
+for (sample_name in colnames(raw_data$E)) {
+    limma::plotMA(raw_data,array=1,xlab="Average log-expression",ylab="Expression log-ratio(this sample vs. others)", main = sample_name, zero.weights = TRUE, status=raw_data$genes$Status)
+}
 ```
 
 ```{r}
-summary(raw_data)
-```
-
-```{r}
-str(raw_data)
+for (sample_name in colnames(raw_data$E)) {
+    plotFB(raw_data, array = 1, pch = 16, cex = 0.3, xlab = "log2 Background", ylab = "log2 Foreground", main = sample_name) # USe this and loop through it
+}
 ```
 
 ## Normalization of the Data
@@ -82,12 +93,15 @@ by performing normalization on the raw data. For this step, I was able to use an
 function from Limma called backgroundCorrect() which took in the raw data and normalized it. 
 
 ```{r}
-norm_data <- limma::backgroundCorrect(raw_data, method = "normexp")   
+corrected_data <- limma::backgroundCorrect(raw_data, method = "normexp", verbose=TRUE)
+# Input: Background corrected EListRaw, Output: Elist
+norm_data <- normalizeBetweenArrays(corrected_data, method = "quantile")  
 ```
 
 ## QC of the Normalized Data
 
 ```{r}
+norm_data_plot <- limma::plotMA(norm_data, array = 1, xlab = "Average Log-expression", ylab = "Expression Log-ratio", zero.weights = TRUE)
 
 ```
 
