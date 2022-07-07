@@ -67,20 +67,23 @@ plotDensities(raw_data, log = TRUE, legend = "topright" , main = "EListRaw Densi
 ```
 
 ```{r}
+## JDO: This is outputting different plots (based on how the function is 'blind' to other columns based on input argument and the 'z-range / saturation values under each plot'), but I agree, they look very similar, maybe use zlim to set a more narrow range, the current zrange printed below each graph gives the actual max and min values. Maybe using 75%*max and 125%*min to start, we lose resolution at the high and low ends but that might be worth the tradeoff for better resolution in the middle
 for (sample_name in colnames(raw_data$E)) {
     print(sample_name)
-	imageplot(raw_data$E[,sample_name], layout=raw_data$printer, legend = TRUE)
+    imageplot(raw_data$E[,sample_name], layout=raw_data$printer, legend = TRUE)
 } # Prints out a pseudo image of each sample for visualizing spatial artifacts (manually look for errors in intensities of raw data)
 ```
 
 ```{r fig.height = 5, fig.width = 5, fig.align = "center"}
 for (sample_name in colnames(raw_data$E)) {
+    ## JDO: you'll need to increment the array argument here to graph each column
     limma::plotMA(raw_data,array=1,xlab="Average log-expression",ylab="Expression log-ratio(this sample vs. others)", main = sample_name, zero.weights = TRUE, status=raw_data$genes$Status)
 }
 ```
 
 ```{r}
 for (sample_name in colnames(raw_data$E)) {
+    ## JDO: you'll need to increment the array argument here to graph each column
     plotFB(raw_data, array = 1, pch = 16, cex = 0.3, xlab = "log2 Background", ylab = "log2 Foreground", main = sample_name) # USe this and loop through it
 }
 ```
@@ -101,6 +104,7 @@ norm_data <- normalizeBetweenArrays(corrected_data, method = "quantile")
 ## QC of the Normalized Data
 
 ```{r}
+## JDO: you'll need to increment the array argument here to graph each column
 norm_data_plot <- limma::plotMA(norm_data, array = 1, xlab = "Average Log-expression", ylab = "Expression Log-ratio", zero.weights = TRUE)
 
 ```
