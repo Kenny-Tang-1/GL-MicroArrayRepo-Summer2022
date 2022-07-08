@@ -36,6 +36,7 @@ dir = "C:/Users/tangk/Desktop/Agilent_Microarray"
 GLDS_41_rs <- read.csv(file.path(dir, "Runsheet(GLDS-41).csv"), check.names = FALSE, fileEncoding = 'UTF-8-BOM') ## Outputs a dataframe
 Factor_Value <- GLDS_41_rs[,"Factor Value[gravity]"]
 ```
+
 - dir = A variable that stores the location of where I kept the runsheets.
 - GLDS_41_rs = A varaible that holds the contents of those runsheets.
 - Factor_Value = A variable that holds specifically the factor values column from the runsheet.
@@ -49,6 +50,7 @@ files = dir(path = file.path(datadir, "GLDS-41/GLDS-41_Raw_Data"), pattern="*\\.
 raw_data <- limma::read.maimages(files, source="agilent", path = file.path(datadir, "GLDS-41/GLDS-41_Raw_Data"), sep="\t", green.only = TRUE)
   
 ```
+
 -   datadir = A variable that stores the path to the directory that holds the three datasets that I have chosen.
 -   files = A variable that will detect all of the text files within the GLDS-41_Raw_Data directory. This is where all of the raw Agilent microarray data is stored for the GLDS-41 dataset.
 -   source = "agilent" because the data that I want to import will be agilent microarray data. There are other options for this flag for other types of microarrays
@@ -58,41 +60,71 @@ raw_data <- limma::read.maimages(files, source="agilent", path = file.path(datad
 
 ## QC of the Raw Data
 
-In this step, I looked at the raw data to make sure that it is in the correct format so that it could be processed correctly down the pipeline.
+In this step, I used some diagnostic functions from the limma package to get a sense of the raw data and to see if there were any abnormalities present.
 
-```{r EListRaw_Density_plot, fig.height = 8, fig.width = 8, fig.align = "center"}
-plotDensities(raw_data, log = TRUE, legend = "topright" , main = "EListRaw Densities")
-# Add in (potentially)
-# Color the lines based on the experimental groups they are in
+```{r EListRaw_density_plot, fig.height = 8, fig.width = 8, fig.align = "center"}
+# This code block uses the plotDensities() function from limma to generate a graph with the raw intensities vs. density 
+plotDensities(raw_data, log = TRUE, legend = "topright" , main = "Density of raw expression values for multiple arrays")
 ```
 
-```{r}
+- raw_data = EListRaw object containing the raw expression values and information about them
+- log = Specifying the densities should be plotted on the log2 scale
+- legend = Specifying where the legend should be placed on the graph
+- main = title of the graph
+
+```{r Pseudoimage_Plot}
+# This code block uses the imageplot() function to generate a pseudoimage for each sample to allow the user to look for any spatial abnormalities in the expressions on the chip.
 for (sample_name in colnames(raw_data$E)) {
     print(sample_name)
-	imageplot(raw_data$E[,sample_name], layout=raw_data$printer, legend = TRUE)
-} # Prints out a pseudo image of each sample for visualizing spatial artifacts (manually look for errors in intensities of raw data)
-```
-
-```{r fig.height = 5, fig.width = 5, fig.align = "center"}
-for (sample_name in colnames(raw_data$E)) {
-    limma::plotMA(raw_data,array=1,xlab="Average log-expression",ylab="Expression log-ratio(this sample vs. others)", main = sample_name, zero.weights = TRUE, status=raw_data$genes$Status)
+	imageplot(raw_data$E[,sample_name], layout=raw_data$printer, zlim = c((1.25*min(raw_data$E[,sample_name])),(0.75*max(raw_data$E[,sample_name]))), legend = TRUE)
 }
 ```
 
-```{r}
+- raw_data$E[, sample_name] = specifying that we want to use the raw expression values (rows) from each sample (column) as the data for a plot
+- layout = using the values from the printer variable from raw_data to specify the dimensions of the pseudoimage generated
+- zlim = altering the range of intensities that will be plotted (min = 1.25 min raw expression value, max = 0.75 max raw expression value)
+- legend = displays the range of the z values (raw expresison values) 
+
+```{r MA_plot, fig.height = 5, fig.width = 5, fig.align = "center"}
+# This code block uses the plotMA() function from limma to generate a MA plot for each of the samples. 
+count = 0
 for (sample_name in colnames(raw_data$E)) {
-    plotFB(raw_data, array = 1, pch = 16, cex = 0.3, xlab = "log2 Background", ylab = "log2 Foreground", main = sample_name) # USe this and loop through it
+    count = count + 1
+    limma::plotMA(raw_data,array=count,xlab="Average log-expression",ylab="Expression log-ratio(this sample vs. others)", main = sample_name)
 }
 ```
+
+- raw_data = EListRaw object containing the raw expression values and information about them
+- array = choosing which array (sample) to use the data from
+- xlab = label for the x axis
+- ylab = label for the y axis
+- main = title for the plot
+
+
+```{r Foreground_and_Background_Plot}
+# This code block uses the plotFB() function from limma to generate a FB plot to compare the foreground and background intensities in each sample. 
+count = 0
+for (sample_name in colnames(raw_data$E)) {
+    count = count + 1
+    plotFB(raw_data, array = count, xlab = "log2 Background", ylab = "log2 Foreground", main = sample_name) 
+}
+```
+
+- raw_data = EListRaw object containing the raw expression values and information about them
+- array = specifying which array (sample) to use as the data
+- xlab = label for the x axis
+- ylab = label for the y axis
+- main = title for the plot
 
 ## Normalization of the Data
 After making sure that the raw data was formatted properly,
 I moved on to removing a lot of the variation in the gene expression data
 that comes from external sources (i.e. Sample preparation, labeling, hybridization)
-by performing normalization on the raw data. For this step, I was able to use another
-function from Limma called backgroundCorrect() which took in the raw data and normalized it. 
+by performing normalization on the raw data. For this step, I was able to use a couple other
+functions from Limma called backgroundCorrect() to subtract the foreground intensities
+from the background intensities and normalizeBetweenArrays() to normalize the data. 
 
-```{r}
+```{r Background_correction_and_Normalization}
 corrected_data <- limma::backgroundCorrect(raw_data, method = "normexp", verbose=TRUE)
 # Input: Background corrected EListRaw, Output: Elist
 norm_data <- normalizeBetweenArrays(corrected_data, method = "quantile")  
@@ -101,8 +133,11 @@ norm_data <- normalizeBetweenArrays(corrected_data, method = "quantile")
 ## QC of the Normalized Data
 
 ```{r}
-norm_data_plot <- limma::plotMA(norm_data, array = 1, xlab = "Average Log-expression", ylab = "Expression Log-ratio", zero.weights = TRUE)
-
+count = 0 
+for (sample_name in colnames(raw_data$E)) {
+    count = count + 1
+    limma::plotMA(norm_data, array = count, xlab = "Average Log-expression", ylab = "Expression Log-ratio (this sample vs. others)", main = sample_name, zero.weights = TRUE)
+}
 ```
 
 ## Differential Gene Analysis
