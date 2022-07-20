@@ -80,6 +80,7 @@ Treatment = factor(Factor_Value, levels = levels)
 - `check.names = FALSE` - makes it so R doesn't check to see if the variable names are syntactically valid variable names. (If true, R could change the names of the variables)
 - `fileEncoding = 'UTF-8-BOM'` - declares what encoding to be used on the file. This allows the character data to be re-encoded and removes the special characters that are inputted by R. 
 - `levels = levels` - designates the elements in the levels variable as the levels of the Treatment variable.
+
 **Input Data:**
 
 - *.csv (runsheet data)
