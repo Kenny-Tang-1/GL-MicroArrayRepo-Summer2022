@@ -20,11 +20,16 @@ This included Bioconductor as well as Linear Models for Microarray (Limma). Thes
 #     install.packages("BiocManager")
 # BiocManager::install("limma")
 
+## For installing statmod on R
+# install.packages("statmod")
+
 ```
 ## Load the packages
 After installing the packages above, I had to load them in using the library function so that I could access their functions.
 ```{r}
 library(limma)
+library(dplyr)
+library(statmod)
 ```
 ## Importing the Raw Data
 Now that the library was loaded, I was able to import the raw data. I started by importing the runsheet into R.
@@ -33,7 +38,10 @@ This contained the necessary data for processing later in the pipeline.
 dir = "C:/Users/tangk/Desktop/Agilent_Microarray"
 GLDS_41_rs <- read.csv(file.path(dir, "Runsheet(GLDS-41).csv"), check.names = FALSE, fileEncoding = 'UTF-8-BOM') ## Outputs a dataframe
 Factor_Value <- GLDS_41_rs[,"Factor Value[gravity]"]
+levels = c("Control Groups" , "Weightlessness", "Gravity, Altered")
+Treatment = factor(Factor_Value, levels = levels)
 ```
+
 - dir = A variable that stores the location of where I kept the runsheets.
 - GLDS_41_rs = A varaible that holds the contents of those runsheets.
 - Factor_Value = A variable that holds specifically the factor values column from the runsheet.
@@ -43,10 +51,11 @@ Here, I imported the raw data from the text files into R using the readmaimages(
 datadir = "C:/Users/tangk/Desktop/Agilent_Microarray/input_data"
 files = dir(path = file.path(datadir, "GLDS-41/GLDS-41_Raw_Data"), pattern="*\\.txt$")
 
-## Input: ".txt" files, Output: EListRaw (Raw expression levels)
+## Input: ".txt" files, Output: EListRaw (Raw intensities)
 raw_data <- limma::read.maimages(files, source="agilent", path = file.path(datadir, "GLDS-41/GLDS-41_Raw_Data"), sep="\t", green.only = TRUE)
   
 ```
+
 -   datadir = A variable that stores the path to the directory that holds the three datasets that I have chosen.
 -   files = A variable that will detect all of the text files within the GLDS-41_Raw_Data directory. This is where all of the raw Agilent microarray data is stored for the GLDS-41 dataset.
 -   source = "agilent" because the data that I want to import will be agilent microarray data. There are other options for this flag for other types of microarrays
@@ -56,45 +65,229 @@ raw_data <- limma::read.maimages(files, source="agilent", path = file.path(datad
 
 ## QC of the Raw Data
 
-In this step, I looked at the raw data to make sure that it is in the correct format so that it could be processed correctly down the pipeline.
+In this step, I used some diagnostic functions from the limma package to get a sense of the raw data and to see if there were any abnormalities present.
 
-```{r}
-class(raw_data)
+```{r EListRaw_density_plot, fig.height = 8, fig.width = 8, fig.align = "center"}
+# This code block uses the plotDensities() function from limma to generate a graph with the raw intensities vs. density 
+suppressWarnings(plotDensities(raw_data, log = TRUE, legend = "topright" , main = "Density of raw intensities for multiple arrays"))
+# Some not a number (NaNs) errors appeared (possibly due to log transformations), but overall doesn't obscure the plot so I suppressed the warnings.
+```
+## TODO: Track the NaNs (Not a Number errors)
+- raw_data = EListRaw object containing the raw intensities and information about the arrays
+- log = Specifying the densities should be plotted on the log2 scale
+- legend = Specifying where the legend should be placed on the graph
+- main = title of the graph
+
+```{r Pseudoimage_Plot}
+# This code block uses the imageplot() function to generate a pseudoimage for each sample to allow the user to look for any spatial abnormalities in the expressions on the chip.
+num_rows <- nrow(raw_data)
+
+find_factors <- function(num) {
+    factors_list <- list()
+    for (n in 1:num) {
+        if((num %% n) == 0) {
+            factors_list <- c(factors_list, n)
+        }
+    }
+    return(factors_list)
+}
+factors <- find_factors(num_rows)
+    
+for (sample_name in colnames(raw_data$E)) {
+    if (length(raw_data$printer) != 0)  {
+	    imageplot(raw_data$E[,sample_name], layout=raw_data$printer, zlim = c((1.25*min(raw_data$E[,sample_name])),(0.75*max(raw_data$E[,sample_name]))), legend = TRUE, main = sample_name)
+        }
+    else {
+        if (length(factors) %% 2 == 0) {
+            rows <- factors[[length(factors)/2]]
+            columns <- factors[[length(factors)/2+1]]
+            }
+        else {
+            rows <- factors[[ceiling(length(factors)/2)]]
+            columns <- factors[[ceiling(length(factors)/2)]]
+            }
+        imageplot(raw_data$E[,sample_name], layout=list(ngrid.r = 1, ngrid.c = 1, nspot.r = 532, nspot.c = 85), zlim = c((1.25*min(raw_data$E[,sample_name])),(0.75*max(raw_data$E[,sample_name]))), legend = TRUE, main = sample_name)
+        }
+}
 ```
 
-```{r}
-dim(raw_data)
+- raw_data$E[, sample_name] = specifying that we want to use the raw expression values (rows) from each sample (column) as the data for a plot
+- layout = using the values from the printer variable from raw_data to specify the dimensions of the pseudoimage generated
+- zlim = altering the range of intensities that will be plotted (min = 1.25 min raw expression value, max = 0.75 max raw expression value)
+- legend = displays the range of the z values (raw expresison values) 
+
+```{r MA_plot, fig.height = 5, fig.width = 5, fig.align = "center"}
+# This code block uses the plotMA() function from limma to generate a MA plot for each of the samples. 
+count = 0
+for (sample_name in colnames(raw_data$E)) {
+    count = count + 1
+    suppressWarnings(limma::plotMA(raw_data,array=count,xlab="Average log-expression",ylab="Expression log-ratio(this sample vs. others)", main = sample_name))
+}
+# There were NaN errors popping up due to the log transformations going on, but they didn't obscure the plots generated, so I went ahead and suppressed the warnings.
 ```
 
-```{r}
-summary(raw_data)
+- raw_data = EListRaw object containing the raw expression values and information about the arrays
+- array = choosing which array (sample) to use the data from
+- xlab = label for the x axis
+- ylab = label for the y axis
+- main = title for the plot
+
+```{r Foreground_and_Background_Plot}
+# This code block uses the plotFB() function from limma to generate a FB plot to compare the foreground and background intensities in each sample. 
+count = 0
+for (sample_name in colnames(raw_data$E)) {
+    count = count + 1
+    plotFB(raw_data, array = count, xlab = "log2 Background", ylab = "log2 Foreground", main = sample_name) 
+}
 ```
 
-```{r}
-str(raw_data)
-```
+- raw_data = EListRaw object containing the raw expression values and information about the arrays
+- array = specifying which array (sample) to use as the data
+- xlab = label for the x axis
+- ylab = label for the y axis
+- main = title for the plot
 
 ## Normalization of the Data
-After making sure that the raw data was formatted properly,
-I moved on to removing a lot of the variation in the gene expression data
-that comes from external sources (i.e. Sample preparation, labeling, hybridization)
-by performing normalization on the raw data. For this step, I was able to use another
-function from Limma called backgroundCorrect() which took in the raw data and normalized it. 
+After making sure that the raw data looks good,
+I had to remove the technical variation in the raw intensities
+that comes from external sources (i.e. Sample preparation)
+by performing normalization on the raw data. For this step, I was able to use a couple other
+functions from Limma called backgroundCorrect() to subtract the foreground intensities
+from the background intensities and normalizeBetweenArrays() to normalize the data. 
 
-```{r}
-norm_data <- limma::backgroundCorrect(raw_data, method = "normexp")   
+```{r Background_correction_and_Normalization}
+corrected_data <- limma::backgroundCorrect(raw_data, method = "normexp") # Corrects intensities for background
+# Input: Background corrected EListRaw, Output: Elist
+norm_data <- normalizeBetweenArrays(corrected_data, method = "quantile") # Normalizes the data
 ```
 
-## QC of the Normalized Data
+- raw_data = EListRaw object containing the raw intensities and information about the arrays
+- method = specifying which background correction method should be used on the raw data
+- corrected_data = Background corrected EListRaw object
+- method specifying which normalization method should be done on the data
 
-```{r}
+## QA of the Normalized Data
+```{r Normalized_Density_plot}
+plotDensities(norm_data, log = TRUE, legend = "topright" , main = "Density of raw intensities for multiple arrays")
+```
 
+- norm_data = EList object containing normalized intensities and information about the arrays
+- log = Specifying the densities should be plotted on the log2 scale
+- legend = Specifying where the legend should be placed on the graph
+- main = title of the graph
+
+```{r Normalized_MA_Plots}
+count = 0 
+for (sample_name in colnames(raw_data$E)) {
+    count = count + 1
+    limma::plotMA(norm_data, array = count, xlab = "Average Log-expression", ylab = "Expression Log-ratio (this sample vs. others)", main = sample_name)
+}
+```
+
+- norm_data = EList object containing normalized intensities and information about the arrays
+- array = choosing which array (sample) to use the data from
+- xlab = label for the x axis
+- ylab = label for the y axis
+- main = title for the plot
+
+```{r Normalized_data_boxplot}
+boxplot(log2(raw_data$E)) # Comparing the raw data to the normalized data
+suppressWarnings(boxplot(log2(norm_data$E)))
+```
+
+- raw_data$E = Raw intensities 
+- norm_data$E = Normalized intensities
+
+## Generating Probe and Gene Level Data
+```{r Generating_raw_probe_level_data}
+# Generating Raw probe level data
+raw_intensities_df <- as.data.frame(raw_data$E, row.names = raw_data$genes$GeneName, col.names = colnames(raw_data$E))# Generates a dataframe containing the raw intensities with the genes as the rows and samples as column names.
+raw_probe_level_data_df <- cbind(raw_data$genes, raw_intensities_df)
+write.csv(raw_probe_level_data_df, file = file.path(dir, "/output_data/GLDS-41_output_data/Raw_probe_level_data-GLDS-41.csv"), row.names = FALSE)
+```
+- raw_intensities_df = Variable containing the raw intensities (raw_data$E)
+- row.names = Making the row names the names of the genes
+- col.names = Making the column names the sample names
+- raw_probe_level_data_df = Dataframe containing the raw intensities with information about each gene
+- file = Choosing the output location of the csv file and the name for the file
+- row.names = Telling R whether or not to export the row names into the csv file
+
+```{r Generating_raw_gene_level_data}
+# Generating raw gene level data
+first_sample_mean = paste0(colnames(raw_data$E)[1], "_mean")
+sample_one_raw = colnames(raw_data$E)[1]
+summarized_columns_raw <- raw_probe_level_data_df %>% group_by(GeneName) %>% summarize(!!first_sample_mean := mean(get(sample_one_raw))) # Using this data frame to merge with
+for (sample_name_raw in colnames(raw_data$E)) {
+    print(sample_name_raw)
+    sample_name_mean = paste0(sample_name_raw,"_mean")
+    sample_name_sd = paste0(sample_name_raw,"_sd")
+    sample_name_median = paste0(sample_name_raw,"_median")
+    summarized_columns_raw <- merge(summarized_columns_raw, raw_probe_level_data_df %>% group_by(GeneName) %>% summarize(!!sample_name_mean := mean(get(sample_name_raw)), !!sample_name_sd := sd(get(sample_name_raw)), !!sample_name_median := median(get(sample_name_raw)), .groups = "keep"))
+    } # This is where I'm merging the other data frames to the first one, to generate 1 data frame with all of the columnes (Gene_name, sample_mean, sample_sd, sample_median)
+write.csv(summarized_columns_raw, file = file.path(dir, paste0("/output_data/GLDS-41_output_data/Raw_gene_level_data-GLDS-41.csv")), row.names = FALSE)
+```
+
+- first_sample_raw_mean = Variable containing the name of the first sample followed by _mean. Used to name the column
+- sample_one_raw = Variable containing the name of the first sample
+- summarized_columns_raw = Dataframe that will contain all of the summarized gene level information (GeneName, mean, SD, median)
+- sample_name_raw = Variable that contains the current sample
+- sample_name_mean - Variable that holds the current sample name followed by _mean. Used to name the column.
+- sample_name_sd - Variable that holds the current sample name followed by _sd. Used to name the column.
+- sample_name_median - Variable that holds the current sample name followed by _median. Used to name the column.
+- .groups = Tells the function what to do about the grouping structure from the dataframe that it is getting the information from
+
+```{r Generating_normalized_probe_level_data}
+# Generating Normalized probe level data
+norm_intensities_df <- as.data.frame(norm_data$E, row.names = norm_data$genes$GeneName, col.names = colnames(norm_data$E))
+norm_probe_level_data_df <- cbind(norm_data$genes, norm_intensities_df)
+write.csv(norm_probe_level_data_df, file = file.path(dir, "/output_data/GLDS-41_output_data/Normalized_probe_level_data-GLDS-41.csv"), row.names = FALSE)
+```
+
+- norm_intensities_df = Variable containing the normalized intensities (norm_data$E)
+- row.names = Making the row names the names of the genes
+- col.names = Making the column names the sample names
+- norm_probe_level_data_df = Dataframe containing the normalized intensities with information about each gene
+- file = Choosing the output location of the csv file and the name for the file
+- row.names = Telling R whether or not to export the row names into the csv file
+
+```{r Generating_normalized_gene_level_data}
+# Generating normalized gene level data
+first_sample_norm = paste0(colnames(norm_data$E)[1], "_mean")
+sample_one_norm = colnames(norm_data$E)[1]
+summarized_columns_norm <- norm_probe_level_data_df %>% group_by(GeneName) %>% summarize(!!first_sample_norm := mean(get(sample_one_norm)))
+for (sample_name_norm in colnames(norm_data$E)) {
+    print(sample_name_norm)
+    sample_name_mean = paste0(sample_name_norm, "_mean")
+    sample_name_sd = paste0(sample_name_norm, "_sd")
+    sample_name_median = paste0(sample_name_norm, "_median")
+    summarized_columns_norm <- merge(summarized_columns_norm, norm_probe_level_data_df %>% group_by(GeneName) %>% summarize(!!sample_name_mean := mean(get(sample_name_norm)), !!sample_name_sd := sd(get(sample_name_norm)), !!sample_name_median := median(get(sample_name_norm)), .groups = "keep"))
+    }
+write.csv(summarized_columns_norm, file = file.path(dir, "/output_data/GLDS-41_output_data/Normalized_gene_level_data-GLDS-41.csv"), row.names = FALSE)
+```
+
+- first_sample_norm_mean = Variable containing the name of the first sample followed by _mean. Used to name the column
+- sample_one_norm = Variable containing the name of the first sample
+- summarized_columns_norm = Dataframe that will contain all of the summarized gene level information (GeneName, mean, SD, median)
+- sample_name_norm = Variable that contains the current sample
+- sample_name_mean - Variable that holds the current sample name followed by _mean. Used to name the column.
+- sample_name_sd - Variable that holds the current sample name followed by _sd. Used to name the column.
+- sample_name_median - Variable that holds the current sample name followed by _median. Used to name the column.
+- .groups = Tells the function what to do about the grouping structure from the dataframe that it is getting the information from
+
+```{r Filtering_Out_Controls_From Normalized_Data}
+
+control_probes <- norm_data$genes$ControlType==1L
+test <- raw_probe_level_data_df %>% select(GeneName, ProbeName) %>% mutate(test_col = ProbeName == GeneName) %>% select(test_col)
+norm_data_filtered <- norm_data[!control_probes, ]
 ```
 
 ## Differential Gene Analysis
 
 ```{r}
-
+design <- model.matrix(~Treatment)
+fit <- lmFit(norm_data_filtered, design)
+fit <- eBayes(fit, trend=TRUE, robust = TRUE)
+summary(decideTests(fit[,-1]))
 ```
 
 ## Adding Gene Annotations
