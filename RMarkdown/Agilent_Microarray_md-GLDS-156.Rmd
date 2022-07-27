@@ -35,6 +35,32 @@ This contained the necessary data for processing later in the pipeline.
 dir = "C:/Users/tangk/Desktop/Agilent_Microarray"
 GLDS_156_rs <- read.csv(file.path(dir, "Runsheet(GLDS-156).csv"), check.names = FALSE, fileEncoding = 'UTF-8-BOM') ## Outputs a dataframe
 Factor_Value <- GLDS_156_rs[,c("Factor Value[Dose]", "Factor Value[Ionizing Radiation]")]
+
+compare_csv_from_runsheet <- function(runsheet_path) {
+    df = read.csv(runsheet_path, check.names = FALSE, fileEncoding = 'UTF-8-BOM') # fileEncoding removes strange characters from the column names
+    # get only Factor Value columns
+    factors = as.data.frame(df[,grep("Factor Value", colnames(df), ignore.case=TRUE)])
+    colnames(factors) = paste("factor",1:dim(factors)[2], sep= "_")
+    result = data.frame(sample_id = df[,c("Sample Name")], factors)	
+    return(result)
+}
+compare_csv <- compare_csv_from_runsheet("Runsheet(GLDS-156).csv")
+study <- as.data.frame(compare_csv[,2:dim(compare_csv)[2]])
+colnames(study) <- colnames(compare_csv)[2:dim(compare_csv)[2]]
+rownames(study) <- compare_csv[,1]
+#DT::datatable(study, caption = "TBA")
+
+##### Format groups and indicate the group that each sample belongs to #####
+if (dim(study) >= 2){
+    group<-apply(study,1,paste,collapse = " & ") # concatenate multiple factors into one condition per sample
+} else{
+    group<-study[,1]
+}
+group_names <- paste0("(",group,")",sep = "") # human readable group names
+group <- make.names(group) # group naming compatible with R models
+names(group) <- group_names
+#DT::datatable(as.data.frame(group), caption = "TBA")
+levels <- factor(group)
 ```
 - dir = A variable that stores the location of where I kept the runsheets.
 - GLDS_156_rs = A varaible that holds the contents of those runsheets.
@@ -46,7 +72,7 @@ datadir = "C:/Users/tangk/Desktop/Agilent_Microarray/input_data"
 files = dir(path = file.path(datadir, "GLDS-156/GLDS-156_Raw_Data"), pattern="*\\.txt$")
 
 ## Input: ".txt" files, Output: EListRaw (Raw expression levels)
-raw_data <- limma::read.maimages(files, source="agilent", path = file.path(datadir, "GLDS-156/GLDS-156_Raw_Data"), sep="\t", green.only = TRUE)
+raw_data <- limma::read.maimages(files, source="agilent", path = file.path(datadir, "GLDS-156/GLDS-156_Raw_Data"), sep="\t", green.only = TRUE, other.columns = "gIsWellAboveBG")
   
 ```
 -   datadir = A variable that stores the path to the directory that holds the three datasets that I have chosen.
@@ -269,14 +295,35 @@ write.csv(summarized_columns_norm, file = file.path(dir, "/output_data/GLDS-156_
 ```{r Filtering_Out_Controls_From Normalized_Data}
 
 control_probes <- norm_data$genes$ControlType==1L
-test <- raw_probe_level_data_df %>% select(GeneName, ProbeName) %>% mutate(test_col = ProbeName == GeneName) %>% select(test_col)
-norm_data_filtered <- norm_data[!control_probes, ]
+IsExpr <- rowSums(norm_data$other$gIsWellAboveBG > 0) > 4 # Removes probes that don't appear to be expressed
+unmapped_probes <- raw_probe_level_data_df$GeneName==raw_probe_level_data_df$ProbeName
+norm_data_filtered <- norm_data[!control_probes & !unmapped_probes & IsExpr, ]
 ```
 
 ## Differential Gene Analysis
 
 ```{r DGE_analysis}
+design <- model.matrix(~ 0 + levels)
+fit <- lmFit(norm_data_filtered, design)
 
+fit.groups <- colnames(fit$design)[which(fit$assign == 1)]
+fit.index <-  which(levels(levels) %in% fit.groups)
+fit.group.names <- gsub(" ", "_", sub(", ", "_", unique(GLDS_41_rs$`Factor Value[gravity]`)))
+
+### Create Contrast Model
+cat("\nCreating contrast model\n")
+combos<-combn(fit.groups,2) # generate matrix of pairwise group combinations for comparison
+combos.names<-combn(fit.group.names,2)
+contrasts<-c(paste(combos[1,],combos[2,],sep = "-"),paste(combos[2,],combos[1,],sep = "-")) # format combinations for limma:makeContrasts
+contrast.names <-c(paste(combos.names[1,],combos.names[2,],sep = "v"),paste(combos.names[2,],combos.names[1,],sep = "v")) # format combinations for output table file names
+
+cont.matrix <- makeContrasts(contrasts = contrasts,levels=design)
+
+
+contrast.fit <- contrasts.fit(fit, cont.matrix)
+contrast.fit <- eBayes(contrast.fit)
+results<-decideTests(contrast.fit, method = "separate", adjust.method = "BH", p.value = 0.05, lfc = 0.5) # FDR .05
+summary(decideTests(contrast.fit[,-1]))
 ```
 
 ## Adding Gene Annotations

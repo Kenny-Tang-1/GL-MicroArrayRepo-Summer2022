@@ -18,9 +18,8 @@
 
 - [GeneLab bioinformatics processing pipeline for Agilent microarray data](#genelab-bioinformatics-processing-pipeline-for-agilent-microarray-data)
 - [Software used](#software-used)
-- [General processing overview with example commands](#general-processing-overview-with-example-commands)
   - [1. Raw Data QC](#1-raw-data-qc)
-    - [1a. Importing the Runsheets](#1a-importing-the-runsheets)
+    - [1a. Importing the runsheets](#1a-importing-the-runsheets)
     - [1b. Importing the Raw Data](#1b-importing-the-raw-data)
   - [2. QC Raw Data](#2-qc-raw-data)
     - [2a. Plotting density of raw expression values](#2a-plotting-density-of-raw-expression-values)
@@ -39,6 +38,9 @@
     - [5b. Generate raw gene level data](#5b-generate-raw-gene-level-data)
     - [5c. Generate normalized probe level data](#5c-generate-normalized-probe-level-data)
     - [5d. Generate normalized gene level data](#5d-generate-normalized-gene-level-data)
+  - [6. Differential Gene Expression Analysis](#6-differential-gene-expression-analysis)
+    - [6a. Filtering unmapped probes and lowly expressed probes](#6a-filtering-unmapped-probes-and-lowly-expressed-probes)
+    - [6b. DGE analysis](#6b-dge-analysis)
 ---
 
 # Software used  
@@ -48,14 +50,8 @@
 |R|4.1.2|[https://www.r-project.org/](https://www.r-project.org/)|
 |Bioconductor|3.14.0|[https://bioconductor.org](https://bioconductor.org)|
 |Limma|3.50.3|[https://bioconductor.org/packages/release/bioc/html/limma.html](https://bioconductor.org/packages/release/bioc/html/limma.html)|
-
----
-
-# General processing overview with example commands  
-
-> Exact processing commands for specific datasets are provided in the [GLDS_Processing_Scripts](GLDS_Processing_Scripts) sub-directory.
-> 
-> All output files marked with a \# are published for each RNAseq processed dataset in the [GLDS repository](https://genelab-data.ndc.nasa.gov/genelab/projects). 
+|dplyr|1.0.9|[https://cran.r-project.org/web/packages/dplyr/index.html](https://cran.r-project.org/web/packages/dplyr/index.html)|
+|statmod|1.4.36|[https://cran.r-project.org/web/packages/statmod/index.html](https://cran.r-project.org/web/packages/statmod/index.html)|
 
 ---
 
@@ -63,23 +59,59 @@
 
 <br>
 
-### 1a. Importing the Runsheets
+### 1a. Importing the runsheets
 
 ```r
-dir = "<File_Path_Containing_Runsheets>"
-GLDS_41_rs <- read.csv(file.path(dir, "Runsheet(GLDS-41).csv"), check.names = FALSE, fileEncoding = 'UTF-8-BOM') ## Outputs a dataframe
-Factor_Value <- GLDS_41_rs[,"Factor Value[gravity]"]
-levels = c("Control Groups" , "Weightlessness", "Gravity, Altered")
-Treatment = factor(Factor_Value, levels = levels)
+dir = "<File_Path_to_Runsheets>"
+GLDS_41_rs <- read.csv(file.path(dir, "<Runsheet_file_name>"), check.names = FALSE, fileEncoding = 'UTF-8-BOM') ## Outputs a dataframe
+Factor_Value <- GLDS_41_rs[,"<Factor_Value_Column_Name>"]
+
+compare_csv_from_runsheet <- function(runsheet_path) {
+    df = read.csv(runsheet_path, check.names = FALSE, fileEncoding = 'UTF-8-BOM') # fileEncoding removes strange characters from the column names
+    # get only Factor Value columns
+    factors = as.data.frame(df[,grep("Factor Value", colnames(df), ignore.case=TRUE)])
+    colnames(factors) = paste("factor",1:dim(factors)[2], sep= "_")
+    result = data.frame(sample_id = df[,c("Sample Name")], factors)	
+    return(result)
+}
+compare_csv <- compare_csv_from_runsheet("<Runsheet_file_name>")
+study <- as.data.frame(compare_csv[,2:dim(compare_csv)[2]])
+colnames(study) <- colnames(compare_csv)[2:dim(compare_csv)[2]]
+rownames(study) <- compare_csv[,1]
+#DT::datatable(study, caption = "TBA")
+
+##### Format groups and indicate the group that each sample belongs to #####
+if (dim(study) >= 2){
+    group<-apply(study,1,paste,collapse = " & ") # concatenate multiple factors into one condition per sample
+} else{
+    group<-study[,1]
+}
+group_names <- paste0("(",group,")",sep = "") # human readable group names
+group <- make.names(group) # group naming compatible with R models
+names(group) <- group_names
+#DT::datatable(as.data.frame(group), caption = "TBA")
+levels <- factor(group)
 ```
 
 **Parameter Definitions:**
 
-- `dir` – variable that stores the path to the runsheet
-- `Runsheet(GLDS-41).csv` – this is the specific runsheet for this data set
-- `check.names = FALSE` - makes it so R doesn't check to see if the variable names are syntactically valid variable names. (If true, R could change the names of the variables)
-- `fileEncoding = 'UTF-8-BOM'` - declares what encoding to be used on the file. This allows the character data to be re-encoded and removes the special characters that are inputted by R. 
-- `levels = levels` - designates the elements in the levels variable as the levels of the Treatment variable.
+- `dir` – Variable that stores the path to the runsheet.
+- `GLDS_41_rs` - Variable containing the contents of the runsheet.
+  - `<Runsheet_file_name>` – Name of the runsheet file.
+  - `check.names = FALSE` - makes it so R doesn't check to see if the variable names are syntactically valid variable names. (If true, R could change the names of the variables)
+  - `fileEncoding = 'UTF-8-BOM'` - declares what encoding to be used on the file. This allows the character data to be re-encoded and removes the special characters that are inputted by R. 
+- `Factor_Value` - Variable containing the values of the factor value columns in the runsheet.
+- `compare_csv_from_runsheet` - Function that extracts the factor value column from the runsheet.
+  - `df` - Stores the contents of the runsheet
+  - `factors` - Contains all the rows of the columns with 'Factor Value' in the column name. 
+  - `ignore.case` - Indicates to the function to not be case sensitive when looking for matches.
+- `compare_csv` - Stores the factor value column.
+- `study` - Removes the column name "sample_id", but retains the values of the column.
+- `colnames(study)` - Stores the column names of the factor values of the experiment.
+- `rownames(study)` - Stores the row names of the experiment (sample names).
+- `group_names` - Human readable group names.
+- `group` - Group names that are compatible with R.
+- `levels` - Variable containing the group names with the compatible names for R. Each unique compatible group name has been turned into a level (categorical variable). 
 
 **Input Data:**
 
@@ -184,14 +216,14 @@ for (sample_name in colnames(raw_data$E)) {
 ```
 
 **Parameter Definitions:**
-- `num_rows` - A variable that contains the number of rows (number of probesets) in the raw dataset.
+- `num_rows` - A variable that contains the number of rows (number of probes) in the raw dataset.
 - `find_factors` - A function that takes a number as an input and return the factors of that number. Returns a list of the factors.
 - `factors` - A variable that stores the list of factors.
 - `rows` - This is a variable that stores one of the 2 values from the middle of the factors list. This is used in the layout argument to specify the amount of rows in the array.
 - `columns` - This is a variable that stores the other value from the middle of the factors list. This is used in the layout argument of imageplot to specify the amount of columns in the array.
 - `raw_data$E[, sample_name]` - Uses the raw intensities (rows) for the specific column (sample_name) as the values for the plot.
 - `layout = raw_data$printer` - The printer layout tells the function the arrangement of the spots on the microarray. This is used to tell the function the dimensions to use.
-- `layout=list(ngrid.r = 1, ngrid.c = 1, nspot.r = rows , nspot.c = columns)` - If the raw data set does not contain a printer component, the code block will instead find the factors of the number of rows in the dataset and choose the factors that have the closest value to each other (middle values). Since any 2 factors that multiplied into the number of rows of the raw dataset would work, I chose to use the values in the middle to generate the most square arrangement.
+- `layout=list(ngrid.r = 1, ngrid.c = 1, nspot.r = rows , nspot.c = columns)` - If the raw data set does not contain a printer component, the code block will instead find the factors of the number of rows in the dataset and choose the factors that have the closest value to each other (middle values of the list). Since any 2 factors that multiplied into the number of rows of the raw dataset would work, I chose to use the values in the middle to generate the most square arrangement. 
 - `zlim` - Specifying the extreme values of z to associate with colors low and high.
 - `legend = TRUE` - Places the range of the z values at the bottom of the plot.
 
@@ -214,13 +246,13 @@ for (sample_name in colnames(raw_data$E)) {
 }
 ```
 **Parameter Definitions:**
-- `count` = Variable that will increase as each iteration of the forloop occurs. This allows me to change which array is being used to generate the FB plots.
+- `count` = Variable that will increase as each iteration of the forloop occurs. This allows me to change which array is being used to generate the MA plots.
 - `sample_name` - A variable that holds the element of the list that we're iterating through. In this case, the list that we're iterating through are the column names of the raw_data$E component. These would be the names of the samples in our raw dataset.
 - `raw_data` - EListRaw object that contains the raw intensities as well as information about each array.
 - `array = count` - Array determines which column(sample) that is being fed into the function. A count was used to change the array in each iteration.
 - `xlab = "Average log-expression"` - The x axis displays the average log-expression of the raw intensities of the sample.
 - `ylab = "Expression log-ratio(this sample vs. others)"` - The y axis displays the Expression log-ratio of this sample versus the average across all other samples.
-- `main = sample_name` - Determines the title of the plot. In thise case it will be the name of each sample.
+- `main = sample_name` - Determines the title of the plot. In this case it will be the name of each sample.
 
 **Input Data:**
 
@@ -385,7 +417,7 @@ suppressWarnings(boxplot(log2(norm_data$E)))
 ```r 
 raw_intensities_df <- as.data.frame(raw_data$E, row.names = raw_data$genes$GeneName, col.names = colnames(raw_data$E))# Generates a dataframe containing the raw intensities with the genes as the rows and samples as column names.
 raw_probe_level_data_df <- cbind(raw_data$genes, raw_intensities_df)
-write.csv(raw_probe_level_data_df, file = file.path(dir, "/output_data/GLDS-41_output_data/Raw_probe_level_data-GLDS-41.csv"), row.names = FALSE)
+write.csv(raw_probe_level_data_df, file = file.path(dir, "<Output_directory_for_csv_and_file_name>"), row.names = FALSE)
 ```
 
 **Parameter Definitions:**
@@ -393,7 +425,7 @@ write.csv(raw_probe_level_data_df, file = file.path(dir, "/output_data/GLDS-41_o
 - `row.names = raw_data$genes$GeneName` - Made each row name the gene name from the genes component of the raw data.
 - `col.names = colnames(raw_data$E)` - Made each column the name of the sample.
 - `raw_probe_level_data_df` - Dataframe containing the raw intensities as well information about each gene (GeneName, ProbeName, ProbeUID, Row, Col, etc.)
-- `file = file.path(dir, "/output_data/GLDS-41_output_data/Raw_probe_level_data-GLDS-41.csv")` - Indicates where to output the file and what to name the csv file.
+- `file = file.path(dir, "<Output_directory_for_csv_and_file_name>")` - Indicates where to output the file and what to name the csv file.
 - `row.names = FALSE` - Tells R not to export the row names
 
 
@@ -419,7 +451,7 @@ for (sample_name_raw in colnames(raw_data$E)) {
     sample_name_median = paste0(sample_name_raw,"_median")
     summarized_columns_raw <- merge(summarized_columns_raw, raw_probe_level_data_df %>% group_by(GeneName) %>% summarize(!!sample_name_mean := mean(get(sample_name_raw)), !!sample_name_sd := sd(get(sample_name_raw)), !!sample_name_median := median(get(sample_name_raw)), .groups = "keep"))
     } # This is where I'm merging the other data frames to the first one, to generate 1 data frame with all of the columnes (Gene_name, sample_mean, sample_sd, sample_median)
-write.csv(summarized_columns_raw, file = file.path(dir, paste0("/output_data/GLDS-41_output_data/Raw_gene_level_data-GLDS-41.csv")), row.names = FALSE)
+write.csv(summarized_columns_raw, file = file.path(dir, paste0("<Output_directory_for_csv_and_file_name>")), row.names = FALSE)
 ```
 
 **Parameter Definitions:**
@@ -431,7 +463,7 @@ write.csv(summarized_columns_raw, file = file.path(dir, paste0("/output_data/GLD
 - `sample_name_sd` - Variable that holds the current sample name followed by _sd. Used to name the column.
 - `sample_name_median` - Variable that holds the current sample name followed by _median. Used to name the column.
 - `.groups = "keep"` - Tells the function to keep the grouping structure from raw_probe_level_data_df.
-- `file = file.path(dir, paste0("/output_data/GLDS-41_output_data/Raw_gene_level_data-GLDS-41.csv"))` - Telling the function where to output the data and what to name the file.
+- `file = file.path(dir, paste0("<Output_directory_for_csv_and_file_name>"))` - Telling the function where to output the data and what to name the file.
 - `row.names = FALSE` - Tells R not to import the row names into the csv files.
 
 **Input Data:**
@@ -448,7 +480,7 @@ write.csv(summarized_columns_raw, file = file.path(dir, paste0("/output_data/GLD
 ```r
 norm_intensities_df <- as.data.frame(norm_data$E, row.names = norm_data$genes$GeneName, col.names = colnames(norm_data$E))
 norm_probe_level_data_df <- cbind(norm_data$genes, norm_intensities_df)
-write.csv(norm_probe_level_data_df, file = file.path(dir, "/output_data/GLDS-41_output_data/Normalized_probe_level_data-GLDS-41.csv"), row.names = FALSE)
+write.csv(norm_probe_level_data_df, file = file.path(dir, "<Output_directory_for_csv_and_file_name>"), row.names = FALSE)
 ```
 
 **Parameter Definitions:**
@@ -456,7 +488,7 @@ write.csv(norm_probe_level_data_df, file = file.path(dir, "/output_data/GLDS-41_
 - `row.names = norm_data$genes$GeneName` - Made each row name the gene name from the genes component of the normalized data.
 - `col.names = colnames(norm_data$E)` - Made each column the name of the sample.
 - `norm_probe_level_data_df` - Variable containing the normalized intensities as well information about each gene (GeneName, ProbeName, ProbeUID, Row, Col, etc.)
-- `file = file.path(dir, "/output_data/GLDS-41_output_data/Normalized_probe_level_data-GLDS-41.csv")` - Indicates where to output the file and what to name the csv file.
+- `file = file.path(dir, "<Output_directory_for_csv_and_file_name>")` - Indicates where to output the file and what to name the csv file.
 - `row.names = FALSE` - Tells R not to export the row names
 
 
@@ -482,7 +514,7 @@ for (sample_name_norm in colnames(norm_data$E)) {
     sample_name_median = paste0(sample_name_norm, "_median")
     summarized_columns_norm <- merge(summarized_columns_norm, norm_probe_level_data_df %>% group_by(GeneName) %>% summarize(!!sample_name_mean := mean(get(sample_name_norm)), !!sample_name_sd := sd(get(sample_name_norm)), !!sample_name_median := median(get(sample_name_norm)), .groups = "keep"))
     }
-write.csv(summarized_columns_norm, file = file.path(dir, "/output_data/GLDS-41_output_data/Normalized_gene_level_data-GLDS-41.csv"), row.names = FALSE)
+write.csv(summarized_columns_norm, file = file.path(dir, "<Output_directory_for_csv_and_file_name>"), row.names = FALSE)
 ```
 **Parameter Definitions:**
 - `first_sample_norm_mean` - Variable containing the name of first sample with _mean added. Used to name the column.
@@ -493,7 +525,7 @@ write.csv(summarized_columns_norm, file = file.path(dir, "/output_data/GLDS-41_o
 - `sample_name_sd` - Variable that holds the current sample name followed by _sd. Used to name the column.
 - `sample_name_median` - Variable that holds the current sample name followed by _median. Used to name the column.
 - `.groups = "keep"` - Tells the function to keep the grouping structure from raw_probe_level_data_df.
-- `file = file.path(dir, paste0("/output_data/GLDS-41_output_data/Normalized_gene_level_data-GLDS-41.csv"))` - Telling the function where to output the data and what to name the file.
+- `file = file.path(dir, paste0("<Output_directory_for_csv_and_file_name>"))` - Telling the function where to output the data and what to name the file.
 - `row.names = FALSE` - Tells R not to import the row names into the csv files.
 
 **Input Data:**
@@ -505,3 +537,69 @@ write.csv(summarized_columns_norm, file = file.path(dir, "/output_data/GLDS-41_o
 - *.csv file (containing normalized gene level data)
 
 <br>
+
+## 6. Differential Gene Expression Analysis
+
+<br>
+
+### 6a. Filtering unmapped probes and lowly expressed probes
+```r
+control_probes <- norm_data$genes$ControlType==1L
+IsExpr <- rowSums(norm_data$other$gIsWellAboveBG > 0) >= 4 # Removes probes that don't appear to be expressed
+unmapped_probes <- raw_probe_level_data_df$GeneName == raw_probe_level_data_df$ProbeName
+norm_data_filtered <- norm_data[!control_probes & !unmapped_probes & IsExpr, ]
+```
+**Parameter Definitions:**
+- `control_probes` - Variable storing the control probes in the dataset. Utilizes the ControlType column to determine whether or not the probe is a control probe or not (1 = control probe, 0 = not control probe).
+- `IsExpr` - Variable storing the probes that are expressed.
+- `unmapped_probes` - Variable storing the probes that were not mapped to genes. This is indicated by the GeneName column having the same name as the ProbeName column.
+- `norm_data_filtered` - Variable storing the normalized data that doesn't include the control probes, unmapped probes, and is expressed. 
+
+**Input Data:**
+
+- No input files needed at this step
+
+**Output Data:**
+
+- No output files at this step.
+
+<br>
+
+### 6b. DGE analysis
+```r
+design <- model.matrix(~ 0 + levels)
+fit <- lmFit(norm_data_filtered, design)
+
+fit.groups <- colnames(fit$design)[which(fit$assign == 1)]
+# fit.index <-  which(levels(levels) %in% fit.groups)
+fit.group.names <- gsub(" ", "_", sub(", ", "_", unique(GLDS_41_rs$`Factor Value[gravity]`)))
+
+### Create Contrast Model
+cat("\nCreating contrast model\n")
+combos<-combn(fit.groups,2) # generate matrix of pairwise group combinations for comparison
+combos.names<-combn(fit.group.names,2)
+contrasts<-c(paste(combos[1,],combos[2,],sep = "-"),paste(combos[2,],combos[1,],sep = "-")) # format combinations for limma:makeContrasts
+contrast.names <-c(paste(combos.names[1,],combos.names[2,],sep = "v"),paste(combos.names[2,],combos.names[1,],sep = "v")) # format combinations for output table file names
+
+cont.matrix <- makeContrasts(contrasts = contrasts,levels=design)
+
+
+contrast.fit <- contrasts.fit(fit, cont.matrix)
+contrast.fit <- eBayes(contrast.fit)
+results<-decideTests(contrast.fit, method = "separate", adjust.method = "BH", p.value = 0.05, lfc = 0.5) 
+summary(decideTests(contrast.fit[,-1]))
+```
+**Parameter Definitions:**
+- `design` - Variable containing the control and experimental groups (factor values) as levels (categorical variables). 
+  - `levels` - Factor values stored as levels (categorical variables).
+- `fit` - Variable containing the MArrayLM object created by lmFit. Contains the result of fitting gene-wise linear models to the normalized intensities / log ratios. 
+  - `norm_data_filtered` - Normalized data where control probes, unmapped probes are removed and only the expressed probes are included.
+- `fit.groups` - Variable containing the names of the levels of the experiment (control group and experimental groups). The names are in a format that is usable by R.
+- `fit.group.names` - Variable containing the names of the levels of the experiment (control and experimental group). The names are not in a format that is usable by R (more human readable).
+- `combos` - Matrix of the pairwise group combinations for comparison
+- `combos.names` - Matrix of the pairwise group combinations for comparison using the group names that are more human readable.
+- `contrasts` - Formatting the combinations to be used in the makeContrasts function.
+- `contrasts.names` - Formatting the combinations to be used in the makeContrasts function using the group names that are more human readable and a 'v' rather than a dash to separate the pairwise combinations. 
+- `cont.matrix` - Matrix containing pairwise combinations created by the makeContrasts function.
+- `contrast.fit` - MArrayLM object containing the statistics (T-statistics, F-statistics, and log-odds of differential experession) as well as the contrasts (pairwise combinations). 
+- `results` - Variable that contains the genes that are significantly differentially expressed for each contrast. Contains the test statistics as well as the p-values.
