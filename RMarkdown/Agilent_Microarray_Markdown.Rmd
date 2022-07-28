@@ -23,6 +23,10 @@ This included Bioconductor as well as Linear Models for Microarray (Limma). Thes
 ## For installing statmod on R
 # install.packages("statmod")
 
+##if (!require("BiocManager", quietly = TRUE))
+#   install.packages("BiocManager")
+#
+#BiocManager::install("biomaRt")
 ```
 ## Load the packages
 After installing the packages above, I had to load them in using the library function so that I could access their functions.
@@ -30,6 +34,7 @@ After installing the packages above, I had to load them in using the library fun
 library(limma)
 library(dplyr)
 library(statmod)
+library(biomaRt)
 ```
 ## Importing the Raw Data
 Now that the library was loaded, I was able to import the raw data. I started by importing the runsheet into R.
@@ -298,9 +303,9 @@ write.csv(summarized_columns_norm, file = file.path(dir, "/output_data/GLDS-41_o
 - .groups = Tells the function what to do about the grouping structure from the dataframe that it is getting the information from
 
 ```{r Filtering_Out_Controls_From Normalized_Data}
-control_probes <- norm_data$genes$ControlType==1L
+control_probes <- norm_data$genes$ControlType==1L # Removes control probes
 IsExpr <- rowSums(norm_data$other$gIsWellAboveBG > 0) >= 4 # Removes probes that don't appear to be expressed
-unmapped_probes <- raw_probe_level_data_df$GeneName == raw_probe_level_data_df$ProbeName
+unmapped_probes <- raw_probe_level_data_df$GeneName == raw_probe_level_data_df$ProbeName # Removes probes where the ProbeName is also the GeneName
 norm_data_filtered <- norm_data[!control_probes & !unmapped_probes & IsExpr, ]
 ```
 
@@ -334,5 +339,35 @@ result_table <- topTable(contrast.fit, number = 9000000) # TODO: Replace this wi
 ## Adding Gene Annotations
 
 ```{r}
+listEnsembl() 
+ensembl <- useEnsembl(biomart = "genes") # Making a mart object (points to the data that is hosted on Ensembl website)
+ensembl
 
+searchDatasets(mart = ensembl, pattern = "[Cc]aenorhabditis elegans") # Pattern = organism of interest
+ensembl <- useDataset(dataset = "celegans_gene_ensembl", mart = ensembl) # Selecting the dataset
+
+searchAttributes(mart = ensembl, pattern = "agilent_") # Look at comments of ADF file to figure out which attribute to use
+
+my_agilent_ids <- norm_data_filtered$genes$ProbeName
+results <- getBM(
+    attributes = c(
+        "agilent_020186", # Name of the array from the ADF file (Write a markdown file about how I found the array name)
+        "ensembl_gene_id",
+        "uniprot_gn_symbol",
+        "go_id"
+        ), filters = "agilent_020186", 
+        values = c(my_agilent_ids), 
+        mart = ensembl)
+
+unique_probe_ids <- results %>% group_by(agilent_020186) %>%
+                      summarise(
+                        SYMBOL = toString(unique(uniprot_gn_symbol)),
+                        ENSEMBL = toString(unique(ensembl_gene_id)),
+                        GO_Ids = toString(unique(go_id))
+                        )
+
+# Join tables
+bound_columns <- bind_cols(norm_data_filtered$E, norm_data_filtered$genes$ProbeName) %>% rename("ProbeName" = "...19")
+compiled_table <- result_table %>% left_join(unique_probe_ids, by = c("ProbeName" = "agilent_020186")) %>% left_join(bound_columns) 
+write.csv(compiled_table, file = file.path(dir, "/output_data/GLDS-41_output_data/Probe_level_annotated_DGE_with_Normalized_Intensities.csv"), row.names = FALSE) 
 ```
