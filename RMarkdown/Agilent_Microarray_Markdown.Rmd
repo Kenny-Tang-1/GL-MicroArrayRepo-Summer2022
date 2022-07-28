@@ -23,6 +23,10 @@ This included Bioconductor as well as Linear Models for Microarray (Limma). Thes
 ## For installing statmod on R
 # install.packages("statmod")
 
+##if (!require("BiocManager", quietly = TRUE))
+#   install.packages("BiocManager")
+#
+#BiocManager::install("biomaRt")
 ```
 ## Load the packages
 After installing the packages above, I had to load them in using the library function so that I could access their functions.
@@ -30,6 +34,7 @@ After installing the packages above, I had to load them in using the library fun
 library(limma)
 library(dplyr)
 library(statmod)
+library(biomaRt)
 ```
 ## Importing the Raw Data
 Now that the library was loaded, I was able to import the raw data. I started by importing the runsheet into R.
@@ -38,8 +43,32 @@ This contained the necessary data for processing later in the pipeline.
 dir = "C:/Users/tangk/Desktop/Agilent_Microarray"
 GLDS_41_rs <- read.csv(file.path(dir, "Runsheet(GLDS-41).csv"), check.names = FALSE, fileEncoding = 'UTF-8-BOM') ## Outputs a dataframe
 Factor_Value <- GLDS_41_rs[,"Factor Value[gravity]"]
-levels = c("Control Groups" , "Weightlessness", "Gravity, Altered")
-Treatment = factor(Factor_Value, levels = levels)
+
+compare_csv_from_runsheet <- function(runsheet_path) {
+    df = read.csv(runsheet_path, check.names = FALSE, fileEncoding = 'UTF-8-BOM') # fileEncoding removes strange characters from the column names
+    # get only Factor Value columns
+    factors = as.data.frame(df[,grep("Factor Value", colnames(df), ignore.case=TRUE)])
+    colnames(factors) = paste("factor",1:dim(factors)[2], sep= "_")
+    result = data.frame(sample_id = df[,c("Sample Name")], factors)	
+    return(result)
+}
+compare_csv <- compare_csv_from_runsheet("Runsheet(GLDS-41).csv")
+study <- as.data.frame(compare_csv[,2:dim(compare_csv)[2]])
+colnames(study) <- colnames(compare_csv)[2:dim(compare_csv)[2]]
+rownames(study) <- compare_csv[,1]
+#DT::datatable(study, caption = "TBA")
+
+##### Format groups and indicate the group that each sample belongs to #####
+if (dim(study) >= 2){
+    group<-apply(study,1,paste,collapse = " & ") # concatenate multiple factors into one condition per sample
+} else{
+    group<-study[,1]
+}
+group_names <- paste0("(",group,")",sep = "") # human readable group names
+group <- make.names(group) # group naming compatible with R models
+names(group) <- group_names
+#DT::datatable(as.data.frame(group), caption = "TBA")
+levels <- factor(group)
 ```
 
 - dir = A variable that stores the location of where I kept the runsheets.
@@ -52,8 +81,7 @@ datadir = "C:/Users/tangk/Desktop/Agilent_Microarray/input_data"
 files = dir(path = file.path(datadir, "GLDS-41/GLDS-41_Raw_Data"), pattern="*\\.txt$")
 
 ## Input: ".txt" files, Output: EListRaw (Raw intensities)
-raw_data <- limma::read.maimages(files, source="agilent", path = file.path(datadir, "GLDS-41/GLDS-41_Raw_Data"), sep="\t", green.only = TRUE)
-  
+raw_data <- limma::read.maimages(files, source="agilent", path = file.path(datadir, "GLDS-41/GLDS-41_Raw_Data"), sep="\t", green.only = TRUE, other.columns="gIsWellAboveBG")
 ```
 
 -   datadir = A variable that stores the path to the directory that holds the three datasets that I have chosen.
@@ -214,9 +242,9 @@ write.csv(raw_probe_level_data_df, file = file.path(dir, "/output_data/GLDS-41_o
 
 ```{r Generating_raw_gene_level_data}
 # Generating raw gene level data
-first_sample_mean = paste0(colnames(raw_data$E)[1], "_mean")
+first_sample_raw_mean = paste0(colnames(raw_data$E)[1], "_mean")
 sample_one_raw = colnames(raw_data$E)[1]
-summarized_columns_raw <- raw_probe_level_data_df %>% group_by(GeneName) %>% summarize(!!first_sample_mean := mean(get(sample_one_raw))) # Using this data frame to merge with
+summarized_columns_raw <- raw_probe_level_data_df %>% group_by(GeneName) %>% summarize(!!first_sample_raw_mean := mean(get(sample_one_raw))) # Using this data frame to merge with
 for (sample_name_raw in colnames(raw_data$E)) {
     print(sample_name_raw)
     sample_name_mean = paste0(sample_name_raw,"_mean")
@@ -252,9 +280,9 @@ write.csv(norm_probe_level_data_df, file = file.path(dir, "/output_data/GLDS-41_
 
 ```{r Generating_normalized_gene_level_data}
 # Generating normalized gene level data
-first_sample_norm = paste0(colnames(norm_data$E)[1], "_mean")
+first_sample_norm_mean = paste0(colnames(norm_data$E)[1], "_mean")
 sample_one_norm = colnames(norm_data$E)[1]
-summarized_columns_norm <- norm_probe_level_data_df %>% group_by(GeneName) %>% summarize(!!first_sample_norm := mean(get(sample_one_norm)))
+summarized_columns_norm <- norm_probe_level_data_df %>% group_by(GeneName) %>% summarize(!!first_sample_norm_mean := mean(get(sample_one_norm)))
 for (sample_name_norm in colnames(norm_data$E)) {
     print(sample_name_norm)
     sample_name_mean = paste0(sample_name_norm, "_mean")
@@ -275,23 +303,71 @@ write.csv(summarized_columns_norm, file = file.path(dir, "/output_data/GLDS-41_o
 - .groups = Tells the function what to do about the grouping structure from the dataframe that it is getting the information from
 
 ```{r Filtering_Out_Controls_From Normalized_Data}
-
-control_probes <- norm_data$genes$ControlType==1L
-test <- raw_probe_level_data_df %>% select(GeneName, ProbeName) %>% mutate(test_col = ProbeName == GeneName) %>% select(test_col)
-norm_data_filtered <- norm_data[!control_probes, ]
+control_probes <- norm_data$genes$ControlType==1L # Removes control probes
+IsExpr <- rowSums(norm_data$other$gIsWellAboveBG > 0) >= 4 # Removes probes that don't appear to be expressed
+unmapped_probes <- raw_probe_level_data_df$GeneName == raw_probe_level_data_df$ProbeName # Removes probes where the ProbeName is also the GeneName
+norm_data_filtered <- norm_data[!control_probes & !unmapped_probes & IsExpr, ]
 ```
 
 ## Differential Gene Analysis
 
 ```{r}
-design <- model.matrix(~Treatment)
+design <- model.matrix(~ 0 + levels)
 fit <- lmFit(norm_data_filtered, design)
-fit <- eBayes(fit, trend=TRUE, robust = TRUE)
-summary(decideTests(fit[,-1]))
+
+fit.groups <- colnames(fit$design)[which(fit$assign == 1)]
+# fit.index <-  which(levels(levels) %in% fit.groups)
+fit.group.names <- gsub(" ", "_", sub(", ", "_", unique(GLDS_41_rs$`Factor Value[gravity]`)))
+
+### Create Contrast Model
+cat("\nCreating contrast model\n")
+combos<-combn(fit.groups,2) # generate matrix of pairwise group combinations for comparison
+combos.names<-combn(fit.group.names,2)
+contrasts<-c(paste(combos[1,],combos[2,],sep = "-"),paste(combos[2,],combos[1,],sep = "-")) # format combinations for limma:makeContrasts
+contrast.names <-c(paste(combos.names[1,],combos.names[2,],sep = "v"),paste(combos.names[2,],combos.names[1,],sep = "v")) # format combinations for output table file names
+
+cont.matrix <- makeContrasts(contrasts = contrasts,levels=design)
+
+
+contrast.fit <- contrasts.fit(fit, cont.matrix)
+contrast.fit <- eBayes(contrast.fit)
+# TODO: 1. See if the values are pairwise values are Log2FC (rename it if so), 2. If not, figure out how to get Log2FC
+summary(decideTests(contrast.fit[,-1]))
+result_table <- topTable(contrast.fit, number = 9000000) # TODO: Replace this with a better way of obtaining the table.
 ```
 
 ## Adding Gene Annotations
 
 ```{r}
+listEnsembl() 
+ensembl <- useEnsembl(biomart = "genes") # Making a mart object (points to the data that is hosted on Ensembl website)
+ensembl
 
+searchDatasets(mart = ensembl, pattern = "[Cc]aenorhabditis elegans") # Pattern = organism of interest
+ensembl <- useDataset(dataset = "celegans_gene_ensembl", mart = ensembl) # Selecting the dataset
+
+searchAttributes(mart = ensembl, pattern = "agilent_") # Look at comments of ADF file to figure out which attribute to use
+
+my_agilent_ids <- norm_data_filtered$genes$ProbeName
+results <- getBM(
+    attributes = c(
+        "agilent_020186", # Name of the array from the ADF file (Write a markdown file about how I found the array name)
+        "ensembl_gene_id",
+        "uniprot_gn_symbol",
+        "go_id"
+        ), filters = "agilent_020186", 
+        values = c(my_agilent_ids), 
+        mart = ensembl)
+
+unique_probe_ids <- results %>% group_by(agilent_020186) %>%
+                      summarise(
+                        SYMBOL = toString(unique(uniprot_gn_symbol)),
+                        ENSEMBL = toString(unique(ensembl_gene_id)),
+                        GO_Ids = toString(unique(go_id))
+                        )
+
+# Join tables
+bound_columns <- bind_cols(norm_data_filtered$E, norm_data_filtered$genes$ProbeName) %>% rename("ProbeName" = "...19")
+compiled_table <- result_table %>% left_join(unique_probe_ids, by = c("ProbeName" = "agilent_020186")) %>% left_join(bound_columns) 
+write.csv(compiled_table, file = file.path(dir, "/output_data/GLDS-41_output_data/Probe_level_annotated_DGE_with_Normalized_Intensities.csv"), row.names = FALSE) 
 ```
