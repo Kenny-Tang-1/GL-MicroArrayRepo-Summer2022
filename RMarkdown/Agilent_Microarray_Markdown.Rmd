@@ -326,8 +326,9 @@ cont.matrix <- makeContrasts(contrasts = contrasts,levels=design)
 
 contrast.fit <- contrasts.fit(fit, cont.matrix)
 contrast.fit <- eBayes(contrast.fit)
-results<-decideTests(contrast.fit, method = "separate", adjust.method = "BH", p.value = 0.05, lfc = 0.5) # FDR .05
+# TODO: 1. See if the values are pairwise values are Log2FC (rename it if so), 2. If not, figure out how to get Log2FC
 summary(decideTests(contrast.fit[,-1]))
+result_table <- topTable(contrast.fit, number = 9000000) # TODO: Replace this with a better way of obtaining the table.
 ```
 
 ## Adding Gene Annotations
