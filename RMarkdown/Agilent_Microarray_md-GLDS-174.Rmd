@@ -20,6 +20,10 @@ This included Bioconductor as well as Linear Models for Microarray (Limma). Thes
 #     install.packages("BiocManager")
 # BiocManager::install("limma")
 
+##if (!require("BiocManager", quietly = TRUE))
+#   install.packages("BiocManager")
+#
+#BiocManager::install("biomaRt")
 ```
 ## Load the packages
 After installing the packages above, I had to load them in using the library function so that I could access their functions.
@@ -27,6 +31,7 @@ After installing the packages above, I had to load them in using the library fun
 library(limma)
 library(dplyr)
 library(statmod)
+library(biomaRt)
 ```
 ## Importing the Raw Data
 Now that the library was loaded, I was able to import the raw data. I started by importing the runsheet into R.
@@ -44,7 +49,7 @@ compare_csv_from_runsheet <- function(runsheet_path) {
     result = data.frame(sample_id = df[,c("Sample Name")], factors)	
     return(result)
 }
-compare_csv <- compare_csv_from_runsheet("Runsheet(GLDS-174).csv")
+compare_csv <- compare_csv_from_runsheet(file.path(dir, "Runsheet(GLDS-174).csv"))
 study <- as.data.frame(compare_csv[,2:dim(compare_csv)[2]])
 colnames(study) <- colnames(compare_csv)[2:dim(compare_csv)[2]]
 rownames(study) <- compare_csv[,1]
@@ -181,11 +186,11 @@ norm_data <- normalizeBetweenArrays(corrected_data, method = "quantile") # Norma
 - raw_data = EListRaw object containing the raw intensities and information about the arrays
 - method = specifying which background correction method should be used on the raw data
 - corrected_data = Background corrected EListRaw object
-- method specifying which normalization method should be done on the data
+- method = specifying which normalization method should be done on the data
 
 ## QA of the Normalized Data
-```{r Normalized_Density_plot}
-plotDensities(norm_data, log = TRUE, legend = "topright" , main = "Density of raw intensities for multiple arrays")
+```{r Normalized_density_plot, fig.height = 15, fig.width = 15, fig.align = "center"}
+plotDensities(norm_data, log = TRUE, legend = "topright" , main = "Density of normalized intensities for multiple arrays")
 ```
 
 - norm_data = EList object containing normalized intensities and information about the arrays
@@ -248,9 +253,9 @@ write.csv(summarized_columns_raw, file = file.path(dir, paste0("/output_data/GLD
 - sample_one_raw = Variable containing the name of the first sample
 - summarized_columns_raw = Dataframe that will contain all of the summarized gene level information (GeneName, mean, SD, median)
 - sample_name_raw = Variable that contains the current sample
-- sample_name_mean - Variable that holds the current sample name followed by _mean. Used to name the column.
-- sample_name_sd - Variable that holds the current sample name followed by _sd. Used to name the column.
-- sample_name_median - Variable that holds the current sample name followed by _median. Used to name the column.
+- sample_name_mean = Variable that holds the current sample name followed by _mean. Used to name the column.
+- sample_name_sd = Variable that holds the current sample name followed by _sd. Used to name the column.
+- sample_name_median = Variable that holds the current sample name followed by _median. Used to name the column.
 - .groups = Tells the function what to do about the grouping structure from the dataframe that it is getting the information from
 
 ```{r Generating_normalized_probe_level_data}
@@ -286,9 +291,9 @@ write.csv(summarized_columns_norm, file = file.path(dir, "/output_data/GLDS-174_
 - sample_one_norm = Variable containing the name of the first sample
 - summarized_columns_norm = Dataframe that will contain all of the summarized gene level information (GeneName, mean, SD, median)
 - sample_name_norm = Variable that contains the current sample
-- sample_name_mean - Variable that holds the current sample name followed by _mean. Used to name the column.
-- sample_name_sd - Variable that holds the current sample name followed by _sd. Used to name the column.
-- sample_name_median - Variable that holds the current sample name followed by _median. Used to name the column.
+- sample_name_mean = Variable that holds the current sample name followed by _mean. Used to name the column.
+- sample_name_sd = Variable that holds the current sample name followed by _sd. Used to name the column.
+- sample_name_median = Variable that holds the current sample name followed by _median. Used to name the column.
 - .groups = Tells the function what to do about the grouping structure from the dataframe that it is getting the information from
 
 ```{r Filtering_normalized_data}
@@ -297,11 +302,16 @@ control_probes <- norm_data$genes$ControlType==1L
 IsExpr <- rowSums(norm_data$other$gIsWellAboveBG > 0) > 4 # Removes probes that don't appear to be expressed
 unmapped_probes <- raw_probe_level_data_df$GeneName==raw_probe_level_data_df$ProbeName
 norm_data_filtered <- norm_data[!control_probes & !unmapped_probes & IsExpr, ]
-
 ```
+- control_probes = Contains the rows of genes where the ControlType column == 1 
+- IsExpr = Only contains the genes where the foreground is much greater than the background intensity. This means that the probe is expressed.
+- unmapped_probes = Contains the probes where the GeneName is the same as the ProbeName column.
+- norm_data_filtered = Filters out the rows with the control probes and unmapped probes while retaining the rows that are expressed.
+
 ## Differential Gene Analysis
 
 ```{r}
+number_of_probes = nrow(norm_data_filtered)
 design <- model.matrix(~ 0 + levels)
 fit <- lmFit(norm_data_filtered, design)
 
@@ -321,12 +331,72 @@ cont.matrix <- makeContrasts(contrasts = contrasts,levels=design)
 
 contrast.fit <- contrasts.fit(fit, cont.matrix)
 contrast.fit <- eBayes(contrast.fit)
-results<-decideTests(contrast.fit, method = "separate", adjust.method = "BH", p.value = 0.05, lfc = 0.5) # FDR .05
+# results<-decideTests(contrast.fit, method = "separate", adjust.method = "BH", p.value = 0.05, lfc = 0.5) # FDR .05
 summary(decideTests(contrast.fit[,-1]))
+result_table <- topTable(contrast.fit, number = number_of_probes) 
 ```
+
+- number_of_probes = Variable that contains the number of rows in the norm_data_filtered variable.
+- design = Variable containing the control and experimental groups (factor values) as levels (categorical variables). 
+  - levels = Factor values stored as levels (categorical variables).
+- fit = Variable containing the MArrayLM object created by lmFit. Contains the result of fitting gene-wise linear models to the normalized intensities / log ratios. 
+  - norm_data_filtered = Normalized data where control probes, unmapped probes are removed and only the expressed probes are included.
+- fit.groups = Variable containing the names of the levels of the experiment (control group and experimental groups). The names are in a format that is usable by R.
+- fit.group.names = Variable containing the names of the levels of the experiment (control and experimental group). The names are not in a format that is usable by R (more human readable).
+- combos = Matrix of the pairwise group combinations for comparison
+- combos.names = Matrix of the pairwise group combinations for comparison using the group names that are more human readable.
+- contrasts = Formatting the combinations to be used in the makeContrasts function.
+- contrasts.names = Formatting the combinations to be used in the makeContrasts function using the group names that are more human readable and a 'v' rather than a dash to separate the pairwise combinations. 
+- cont.matrix = Matrix containing pairwise combinations created by the makeContrasts function.
+- contrast.fit = MArrayLM object containing the statistics (T-statistics, F-statistics, and log-odds of differential experession) as well as the contrasts (pairwise combinations). 
+- results_table = Matrix that contains the genes that are significantly differentially expressed for each contrast. Contains the gene information, contrast information, and DGE information (P-values, Ave Expr, F, etc.).
 
 ## Adding Gene Annotations
 
 ```{r}
+listEnsembl() 
+ensembl <- useEnsembl(biomart = "genes") # Making a mart object (points to the data that is hosted on Ensembl website)
+ensembl
 
+searchDatasets(mart = ensembl, pattern = "Human") # Pattern = organism of interest
+ensembl <- useDataset(dataset = "hsapiens_gene_ensembl", mart = ensembl) # Selecting the dataset
+
+searchAttributes(mart = ensembl, pattern = "agilent_") # Look at comments of ADF file to figure out which attribute to use
+
+my_agilent_ids <- norm_data_filtered$genes$ProbeName
+results <- getBM(
+    attributes = c(
+        "agilent_wholegenome_4x44k_v2", # Name of the array from the ADF file (Write a markdown file about how I found the array name)
+        "ensembl_gene_id",
+        "uniprot_gn_symbol",
+        "go_id"
+        ), filters = "agilent_wholegenome_4x44k_v2", 
+        values = c(my_agilent_ids), 
+        mart = ensembl)
+
+unique_probe_ids <- results %>% group_by(agilent_wholegenome_4x44k_v2) %>%
+                      summarise(
+                        SYMBOL = toString(unique(uniprot_gn_symbol)),
+                        ENSEMBL = toString(unique(ensembl_gene_id)),
+                        GO_Ids = toString(unique(go_id))
+                        )
+                      
+# Join tables
+bound_columns <- bind_cols(norm_data_filtered$E, norm_data_filtered$genes$ProbeName) %>% rename("ProbeName" = paste0("...", ncol(norm_data_filtered)+1))
+compiled_table <- result_table %>% left_join(unique_probe_ids, by = c("ProbeName" = "agilent_wholegenome_4x44k_v2")) %>% left_join(bound_columns) 
+write.csv(compiled_table, file = file.path(dir, "/output_data/GLDS-174_output_data/Probe_level_annotated_DGE_with_Normalized_Intensities_GLDS_174.csv"), row.names = FALSE) 
 ```
+
+- listEnsembl = Lists the databases that Ensembl has.
+- ensembl = Variable containing the mart object that points to the data that is hosted on the Ensembl website.
+  - biomart = "genes" = Specifying that we want to use the gene database from Ensembl.
+- searchDatasets = Lists out the datasets available in the database that follow the specific pattern indicated
+  - pattern = "Human" = Specifying which organism dataset we want to look for in the database.
+- dataset = "hsapiens_gene_ensembl" - Choosing the dataset from the list of available datasets for that organism.
+- searchAttributes = A function that looks for the attribute that is specified in the pattern argument.
+  - pattern = "agilent_" = Making the function look for attributes that contain "agilent_" in them.
+- bound_columns - Matrix that links the normalized intensity values to their corresponding probe name.
+  - rename("ProbeName" = paste0("...", ncol(norm_data_filtered)+1)) - Replacing the R generated column name with "ProbeName".
+- compiled_table = Table that contains the merged DGE, normalized intensites, and gene annotations.
+  - by = c("ProbeName" = "agilent_wholegenome_4x44k_v2") - Telling the function left_join how to join the two tables. In this case we're telling the function to use the ProbeName column from result_table and the "agilent_020186" column (probe names) from unique_probe_ids. 
+- write.csv = Creates a CSV file containing the DGE, gene annotations, and normalized intensities into the specified output file.
