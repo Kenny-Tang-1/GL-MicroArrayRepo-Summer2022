@@ -4,11 +4,11 @@
 
 ---
 
-**Date:**  July 5, 2022
+**Date:**  August 3, 2022
 **Revision:**   
 **Document Number:** 
 
-**Submitted by:**  
+**Submitted by: Kenny Tang**  
 
 
 **Approved by:**  
@@ -41,6 +41,10 @@
   - [6. Differential Gene Expression Analysis](#6-differential-gene-expression-analysis)
     - [6a. Filtering unmapped probes and lowly expressed probes](#6a-filtering-unmapped-probes-and-lowly-expressed-probes)
     - [6b. DGE analysis](#6b-dge-analysis)
+  - [7. Adding Gene Annotations](#7-adding-gene-annotations)
+    - [7a. Using biomaRt to search for the organism](#7a-using-biomart-to-search-for-the-organism)
+    - [7b. Obtaining gene annotations from biomaRt](#7b-obtaining-gene-annotations-from-biomart)
+    - [7c. Combining the gene annotations to the DGE and normalized intensites and writing it to a file](#7c-combining-the-gene-annotations-to-the-dge-and-normalized-intensites-and-writing-it-to-a-file)
 ---
 
 # Software used  
@@ -567,6 +571,7 @@ norm_data_filtered <- norm_data[!control_probes & !unmapped_probes & IsExpr, ]
 
 ### 6b. DGE analysis
 ```r
+number_of_probes = nrow(norm_data_filtered)
 design <- model.matrix(~ 0 + levels)
 fit <- lmFit(norm_data_filtered, design)
 
@@ -586,10 +591,11 @@ cont.matrix <- makeContrasts(contrasts = contrasts,levels=design)
 
 contrast.fit <- contrasts.fit(fit, cont.matrix)
 contrast.fit <- eBayes(contrast.fit)
-results<-decideTests(contrast.fit, method = "separate", adjust.method = "BH", p.value = 0.05, lfc = 0.5) 
 summary(decideTests(contrast.fit[,-1]))
+result_table <- topTable(contrast.fit, number = number_of_probes)
 ```
 **Parameter Definitions:**
+- `number_of_probes` - Variable that contains the number of rows in the norm_data_filtered variable.
 - `design` - Variable containing the control and experimental groups (factor values) as levels (categorical variables). 
   - `levels` - Factor values stored as levels (categorical variables).
 - `fit` - Variable containing the MArrayLM object created by lmFit. Contains the result of fitting gene-wise linear models to the normalized intensities / log ratios. 
@@ -602,4 +608,110 @@ summary(decideTests(contrast.fit[,-1]))
 - `contrasts.names` - Formatting the combinations to be used in the makeContrasts function using the group names that are more human readable and a 'v' rather than a dash to separate the pairwise combinations. 
 - `cont.matrix` - Matrix containing pairwise combinations created by the makeContrasts function.
 - `contrast.fit` - MArrayLM object containing the statistics (T-statistics, F-statistics, and log-odds of differential experession) as well as the contrasts (pairwise combinations). 
-- `results` - Variable that contains the genes that are significantly differentially expressed for each contrast. Contains the test statistics as well as the p-values.
+- `results_table` - Matrix that contains the genes that are significantly differentially expressed for each contrast. Contains the gene information, contrast information, and DGE information (P-values, Ave Expr, F, etc.).
+
+**Input Data:**
+
+- No input files needed at this step
+
+**Output Data:**
+
+- No output files at this step.
+
+<br>
+
+## 7. Adding Gene Annotations
+
+<br>
+
+### 7a. Using biomaRt to search for the organism
+```r
+listEnsembl() 
+ensembl <- useEnsembl(biomart = "genes") # Making a mart object (points to the data that is hosted on Ensembl website)
+ensembl
+
+searchDatasets(mart = ensembl, pattern = "[Cc]aenorhabditis elegans") # Pattern = organism of interest
+ensembl <- useDataset(dataset = "celegans_gene_ensembl", mart = ensembl) # Selecting the dataset
+
+searchAttributes(mart = ensembl, pattern = "agilent_") # Look at comments of ADF file to figure out which attribute to use
+```
+**Parameter Definitions:**
+- `listEnsembl` - Lists the databases that Ensembl has.
+- `ensembl` - Variable containing the mart object that points to the data that is hosted on the Ensembl website.
+  - `biomart = "genes"` - Specifying that we want to use the gene database from Ensembl.
+- `searchDatasets` - Lists out the datasets available in the database that follow the specific pattern indicated
+  - `pattern = "[Cc]aenorhabditis elegans"` - Specifying which organism dataset we want to look for in the database.
+- `dataset = "celegans_gene_ensembl"` - Choosing the dataset from the list of available datasets for that organism.
+- `searchAttributes` - A function that looks for the attribute that is specified in the pattern argument.
+  - `pattern = "agilent_"` - Making the function look for attributes that contain "agilent_" in them.
+
+**Input Data:**
+
+- No input files needed at this step
+
+**Output Data:**
+
+- No output files at this step.
+
+<br>
+
+### 7b. Obtaining gene annotations from biomaRt
+```r
+my_agilent_ids <- norm_data_filtered$genes$ProbeName
+results <- getBM(
+    attributes = c(
+        "agilent_020186", # Name of the array from the ADF file (Write a markdown file about how I found the array name)
+        "ensembl_gene_id",
+        "uniprot_gn_symbol",
+        "go_id"
+        ), filters = "agilent_020186", 
+        values = c(my_agilent_ids), 
+        mart = ensembl)
+
+unique_probe_ids <- results %>% group_by(agilent_020186) %>%
+                      summarise(
+                        SYMBOL = toString(unique(uniprot_gn_symbol)),
+                        ENSEMBL = toString(unique(ensembl_gene_id)),
+                        GO_Ids = toString(unique(go_id))
+                        )
+```
+**Parameter Definitions:**
+- `my_agilent_ids` - Variable containing the probe names from norm_data_filtered.
+- `results` - Variable containing the matrix with each of the attributes as a column.
+  - `attributes = c("<name_of_attribute>", "ensembl_gene_id", "uniprot_gn_symbol", "go_id")` - Specifying what gene attributes we want biomaRt to obtain.
+  - `filters= "<name_of_attribute>"` - Filters out any genes that aren't a part of the "<name_of_attribute>" attribute.
+  - `values = c(my_agilent_ids)` - Makes it so the function only looks for the attributes of the genes that are in the my_agilent_ids variable.
+- `unique_probe_ids` - Variable that stores the unique probe IDs along with any multimapped Symbols, Ensembl IDs, and GO_Ids.
+
+**Input Data:**
+
+- No input files needed at this step
+
+**Output Data:**
+
+- No output files at this step.
+
+<br>
+
+### 7c. Combining the gene annotations to the DGE and normalized intensites and writing it to a file
+```r 
+bound_columns <- bind_cols(norm_data_filtered$E, norm_data_filtered$genes$ProbeName) %>% rename("ProbeName" = paste0("...", ncol(norm_data_filtered)+1))
+compiled_table <- result_table %>% left_join(unique_probe_ids, by = c("ProbeName" = "<name_of_attribute>")) %>% left_join(bound_columns) 
+write.csv(compiled_table, file = file.path(dir, "<Output_directory_for_csv_and_file_name>"), row.names = FALSE) 
+```
+**Parameter Definitions:**
+- `bound_columns` - Matrix that links the normalized intensity values to their corresponding probe name.
+  - `rename("ProbeName" = paste0("...", ncol(norm_data_filtered)+1))` - Replacing the R generated column name with "ProbeName".
+- `compiled_table` - Table that contains the merged DGE, normalized intensites, and gene annotations.
+  - `by = c("ProbeName" = "<name_of_attribute>")` - Telling the function left_join how to join the two tables. In this case we're telling the function to use the ProbeName column from result_table and the "agilent_020186" column (probe names) from unique_probe_ids. 
+- `write.csv` - Creates a CSV file containing the DGE, gene annotations, and normalized intensities into the specified output file.
+
+**Input Data:**
+
+- No input files needed at this step
+
+**Output Data:**
+
+- *.csv file (contains the DGE, gene annotations, and normalized intensities)
+
+<br>
