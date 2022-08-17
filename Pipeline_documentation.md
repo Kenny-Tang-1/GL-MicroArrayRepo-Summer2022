@@ -4,7 +4,7 @@
 
 ---
 
-**Date:**  August 3, 2022
+**Date:**  August 16, 2022
 **Revision:**   
 **Document Number:** 
 
@@ -166,7 +166,8 @@ raw_data <- limma::read.maimages(files, source="agilent", path = file.path(datad
 ### 2a. Plotting density of raw expression values
 
 ```r
-plotDensities(raw_data, log = TRUE, legend = "topright" , main = "Density of raw intensities for multiple arrays")
+suppressWarnings(plotDensities(raw_data, log = TRUE, legend = "topright" , main = "Density of raw intensities for multiple arrays"))
+# NaNs produced due to the log transformations, but since the plot isn't significantly affected, I decided to just suppress the warnings.
 ```
 
 **Parameter Definitions:**
@@ -221,7 +222,7 @@ for (sample_name in colnames(raw_data$E)) {
 
 **Parameter Definitions:**
 - `num_rows` - A variable that contains the number of rows (number of probes) in the raw dataset.
-- `find_factors` - A function that takes a number as an input and return the factors of that number. Returns a list of the factors.
+- `find_factors` - A function that takes a number as an input and returns a list of the factors of the input number.
 - `factors` - A variable that stores the list of factors.
 - `rows` - This is a variable that stores one of the 2 values from the middle of the factors list. This is used in the layout argument to specify the amount of rows in the array.
 - `columns` - This is a variable that stores the other value from the middle of the factors list. This is used in the layout argument of imageplot to specify the amount of columns in the array.
@@ -396,7 +397,7 @@ for (sample_name in colnames(raw_data$E)) {
 ### 4c. Boxplots
 ```r
 boxplot(log2(raw_data$E)) # Comparing the raw data to the normalized data
-suppressWarnings(boxplot(log2(norm_data$E)))
+suppressWarnings(boxplot(log2(norm_data$E))) # NaNs error created by the log transformation suppressed because it doesn't affect the plot significantly
 ```
 
 **Parameter Definitions:**
@@ -548,8 +549,8 @@ write.csv(summarized_columns_norm, file = file.path(dir, "<Output_directory_for_
 
 ### 6a. Filtering unmapped probes and lowly expressed probes
 ```r
-control_probes <- norm_data$genes$ControlType==1L
-IsExpr <- rowSums(norm_data$other$gIsWellAboveBG > 0) >= 4 # Removes probes that don't appear to be expressed
+control_probes <- norm_data$genes$ControlType==1L # ControlType column provided in dataset to determine probe type
+IsExpr <- rowSums(norm_data$other$gIsWellAboveBG > 0) >= 4 # Removes probes that don't appear to be expressed (4 can be changed based on number of biological replicates in the experiment)
 unmapped_probes <- raw_probe_level_data_df$GeneName == raw_probe_level_data_df$ProbeName
 norm_data_filtered <- norm_data[!control_probes & !unmapped_probes & IsExpr, ]
 ```
@@ -576,7 +577,6 @@ design <- model.matrix(~ 0 + levels)
 fit <- lmFit(norm_data_filtered, design)
 
 fit.groups <- colnames(fit$design)[which(fit$assign == 1)]
-# fit.index <-  which(levels(levels) %in% fit.groups)
 fit.group.names <- gsub(" ", "_", sub(", ", "_", unique(GLDS_41_rs$`Factor Value[gravity]`)))
 
 ### Create Contrast Model

@@ -93,7 +93,8 @@ In this step, I used some diagnostic functions from the limma package to get a s
 
 ```{r EListRaw_density_plot, fig.height = 10, fig.width = 10, fig.align = "center"}
 # This code block uses the plotDensities() function from limma to generate a graph with the raw intensities vs. density 
-plotDensities(raw_data, log = TRUE, legend = "topright" , main = "Density of raw expression values for multiple arrays")
+suppressWarnings(plotDensities(raw_data, log = TRUE, legend = "topright" , main = "Density of raw expression values for multiple arrays"))
+# Some not a number (NaNs) errors appeared (possibly due to log transformations), but overall doesn't obscure the plot so I suppressed the warnings.
 ```
 
 - raw_data = EListRaw object containing the raw expression values and information about them
